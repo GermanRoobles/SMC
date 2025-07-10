@@ -136,12 +136,11 @@ def create_test_chart(df, title="Gráfico de Prueba", height=600):
             increasing=dict(line=dict(color='#26A69A', width=1), fillcolor='#26A69A'),
             decreasing=dict(line=dict(color='#EF5350', width=1), fillcolor='#EF5350'),
             line=dict(width=1),
-            hovertemplate="<b>%{x}</b><br>" +
-                         "Apertura: $%{open:,.2f}<br>" +
-                         "Máximo: $%{high:,.2f}<br>" +
-                         "Mínimo: $%{low:,.2f}<br>" +
-                         "Cierre: $%{close:,.2f}<br>" +
-                         "<extra></extra>"
+            hovertext=[
+                f"Apertura: ${row['open']:,.2f}<br>Máximo: ${row['high']:,.2f}<br>Mínimo: ${row['low']:,.2f}<br>Cierre: ${row['close']:,.2f}"
+                for _, row in df.iterrows()
+            ],
+            hoverinfo='x+y'
         )
     ])
 

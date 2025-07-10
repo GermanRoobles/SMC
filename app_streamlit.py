@@ -246,6 +246,8 @@ st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView
 st.title("📊 Smart Money Concepts - TradingView Style")
 
 # --- SIDEBAR CONTROLS ---
+
+# --- CONTROLES SIDEBAR ---
 symbol = st.sidebar.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT"])
 timeframe = st.sidebar.selectbox("Timeframe", ["1m", "5m", "15m"])
 data_days = st.sidebar.selectbox("Días de datos", [1, 3, 5, 7, 14, 30], index=2)
@@ -265,6 +267,9 @@ if backtesting_enabled:
     risk_per_trade = st.sidebar.slider("Riesgo por Trade (%)", 0.5, 5.0, 1.0, 0.5)
     show_backtest_chart = st.sidebar.checkbox("Mostrar Gráfico de Performance", value=True)
     show_backtest_report = st.sidebar.checkbox("Mostrar Reporte Detallado", value=True)
+
+# --- CONTROL PARA OPEN INTEREST ---
+show_open_interest = st.sidebar.checkbox("Mostrar Open Interest (Binance Futures)", value=False, help="Overlay de interés abierto real sobre el gráfico principal.")
 
 # Configuración histórica
 st.sidebar.markdown("### 📅 Historical Analysis")
@@ -424,10 +429,44 @@ with tab_overview:
     # Usar datos validados para el resto del análisis
     df = df_fixed
 
+
     # Crear gráfico base con estilo TradingView
     with st.spinner("📊 Creando gráfico base..."):
         fig = create_optimized_chart(df)
         show_temp_message('success', "✅ Gráfico base creado")
+
+    # --- OVERLAY OPEN INTEREST (si está activado) ---
+    if show_open_interest:
+        try:
+            oi_df = pd.read_csv("open_interest_btcusdt.csv")
+            oi_df['timestamp'] = pd.to_datetime(oi_df['timestamp'])
+            # Filtrar por rango de fechas del gráfico principal
+            min_time = df['timestamp'].min()
+            max_time = df['timestamp'].max()
+            oi_df = oi_df[(oi_df['timestamp'] >= min_time) & (oi_df['timestamp'] <= max_time)]
+            # Añadir traza de Open Interest (línea, eje secundario)
+            fig.add_trace(go.Scatter(
+                x=oi_df['timestamp'],
+                y=oi_df['sumOpenInterest'].astype(float),
+                mode='lines',
+                name='Open Interest',
+                line=dict(color='#FFD700', width=2, dash='dot'),
+                yaxis='y2',
+                hovertemplate='Open Interest: %{y}<br>Time: %{x}<extra></extra>'
+            ))
+            # Configurar eje secundario
+            fig.update_layout(
+                yaxis2=dict(
+                    title=dict(text='Open Interest', font=dict(color='#FFD700')),
+                    overlaying='y',
+                    side='left',
+                    showgrid=False,
+                    tickfont=dict(color='#FFD700'),
+                )
+            )
+            st.info("🟡 Open Interest overlay añadido (Binance Futures)")
+        except Exception as e:
+            st.warning(f"No se pudo cargar el Open Interest: {e}")
 
     # Renderizado condicional basado en volumen de datos
     data_points = len(df)
@@ -748,66 +787,56 @@ with tab_overview:
         })
         show_temp_message('success', "✅ Gráfico renderizado exitosamente")
 
+
 # --- SETUPS & CONFLUENCIAS ---
 with tab_setups:
     st.header("Setups & Confluencias")
-    if bot_analysis:
-        # Mostrar setups detectados
+    # Mostrar setups del snapshot histórico si está en modo histórico y snapshot seleccionado
+    show_setups = False
+    setups_data = None
+    if enable_historical and 'historical_manager' in st.session_state and st.session_state.historical_manager.snapshots:
+        idx = st.session_state.get('snap_idx', 0)
+        snapshot = st.session_state.historical_manager.snapshots[idx]
+        bot_analysis_hist = getattr(snapshot, 'bot_analysis', None)
+        if bot_analysis_hist and 'setups' in bot_analysis_hist and bot_analysis_hist['setups'] is not None:
+            setups_data = bot_analysis_hist['setups']
+            show_setups = True
+    elif bot_analysis and 'setups' in bot_analysis and bot_analysis['setups'] is not None:
+        setups_data = bot_analysis['setups']
+        show_setups = True
+    if show_setups and setups_data is not None and not setups_data.empty:
         st.subheader("Setups Detectados")
-        if 'setups' in bot_analysis and bot_analysis['setups'] is not None:
-            st.dataframe(bot_analysis['setups'], use_container_width=True)
-        else:
-            st.info("No hay setups detectados.")
-        # Mostrar setups potenciales
-        st.subheader("Setups Potenciales (Anticipados)")
-        try:
-            from smc_bot import detect_potential_setups
-            # Obtener los datos necesarios del análisis
-            fvg_data = signals["fvg"] if "fvg" in signals else pd.DataFrame()
-            ob_data = signals["orderblocks"] if "orderblocks" in signals else pd.DataFrame()
-            structure_data = bot_analysis.get("structure", {}) if "structure" in bot_analysis else {}
-            potential_setups = detect_potential_setups(df, fvg_data, ob_data, structure_data)
-            if potential_setups and len(potential_setups) > 0:
-                st.dataframe(pd.DataFrame(potential_setups), use_container_width=True)
-            else:
-                st.info("No hay setups potenciales detectados.")
-        except Exception as e:
-            st.warning(f"No se pudo calcular setups potenciales: {e}")
-        # Mostrar puntuación de confluencia
-        st.subheader("Puntuación de Confluencia")
-        try:
-            from smc_bot import score_confluences
-            # Si hay setups detectados, calcular la puntuación para cada uno
-            setups_df = bot_analysis['setups'] if 'setups' in bot_analysis and bot_analysis['setups'] is not None else None
-            if setups_df is not None and not setups_df.empty:
-                scores = [score_confluences(setup) for setup in setups_df.to_dict(orient='records')]
-                scores_df = pd.DataFrame(scores)
-                st.dataframe(scores_df, use_container_width=True)
-            else:
-                st.info("No hay setups para calcular confluencia.")
-        except Exception as e:
-            st.warning(f"No se pudo calcular la puntuación de confluencia: {e}")
+        st.dataframe(setups_data, use_container_width=True)
     else:
-        st.info("Ejecuta el análisis SMC para ver setups y confluencias.")
+        st.info("No hay setups detectados.")
+
 
 # --- SEÑALES Y TRADING ---
 with tab_signals:
     st.header("Señales y Trading")
-    if trade_engine_enabled and bot_analysis:
+    # Mostrar señales del snapshot histórico si está en modo histórico y snapshot seleccionado
+    show_signals_tab = False
+    signals_list = None
+    if enable_historical and 'historical_manager' in st.session_state and st.session_state.historical_manager.snapshots:
+        idx = st.session_state.get('snap_idx', 0)
+        snapshot = st.session_state.historical_manager.snapshots[idx]
+        if hasattr(snapshot, 'signals') and snapshot.signals:
+            signals_list = snapshot.signals
+            show_signals_tab = True
+    elif trade_engine_enabled and bot_analysis:
         try:
             trade_analysis = get_trade_engine_analysis(df, bot_analysis)
             if trade_analysis['signal_count'] > 0:
-                st.subheader("Señales Activas")
-                for i, signal in enumerate(trade_analysis['signals']):
-                    st.write(f"{i+1}. {signal.signal_type.value} | Entrada: {signal.entry_price} | SL: {signal.stop_loss} | TP: {signal.take_profit} | Confianza: {signal.confidence:.2f}")
-                st.subheader("Estadísticas del Motor de Trading")
-                st.json(trade_analysis.get('settings', {}))
-            else:
-                st.info("No hay señales activas.")
+                signals_list = trade_analysis['signals']
+                show_signals_tab = True
         except Exception as e:
             st.error(f"Error al obtener señales de trading: {e}")
+    if show_signals_tab and signals_list:
+        st.subheader("Señales Activas")
+        for i, signal in enumerate(signals_list):
+            st.write(f"{i+1}. {signal.signal_type.value} | Entrada: {signal.entry_price} | SL: {signal.stop_loss} | TP: {signal.take_profit} | Confianza: {signal.confidence:.2f}")
     else:
-        st.info("Activa el motor de trading para ver señales y estadísticas.")
+        st.info("No hay señales activas.")
 
 # --- BACKTESTING & HISTÓRICO ---
 with tab_backtest:
@@ -856,7 +885,171 @@ with tab_backtest:
         snapshot = snapshots[idx]
         st.info(f"Snapshot: {snapshot.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
         # Mostrar gráfico OHLC
-        st.plotly_chart(create_optimized_chart(snapshot.df), use_container_width=True)
+        # --- VISUALIZACIÓN DE INDICADORES EN EL GRÁFICO HISTÓRICO ---
+        # Usar el mismo renderizado visual que en tiempo real, pero con los datos del snapshot
+        df_hist = snapshot.df
+        signals_hist = snapshot.bot_analysis if hasattr(snapshot, 'bot_analysis') else None
+        if signals_hist is None:
+            st.plotly_chart(create_optimized_chart(df_hist), use_container_width=True)
+            st.info("No hay análisis de indicadores para este snapshot.")
+        else:
+            # Validar y corregir datos
+            df_hist_fixed = validate_and_fix_chart_data(df_hist)
+            fig_hist = create_optimized_chart(df_hist_fixed)
+            # Renderizar indicadores visuales si existen
+            try:
+                # FVGs
+                if 'fvg' in signals_hist and signals_hist['fvg'] is not None:
+                    fvg_data = signals_hist['fvg']
+                    fvg_count = 0
+                    for i, row in fvg_data.iterrows():
+                        if pd.notna(row.get('FVG', None)):
+                            fvg_count += 1
+                            is_bullish = row['FVG'] == 1
+                            color = '#2962FF' if is_bullish else '#FF6D00'
+                            fig_hist.add_shape(
+                                type="rect",
+                                x0=df_hist_fixed.iloc[i]["timestamp"],
+                                x1=df_hist_fixed.iloc[min(i+8, len(df_hist_fixed)-1)]["timestamp"],
+                                y0=row["Bottom"],
+                                y1=row["Top"],
+                                fillcolor=color,
+                                opacity=0.15,
+                                line=dict(color=color, width=1, dash="dot")
+                            )
+                            # Anotación FVG cada 3
+                            if fvg_count % 3 == 0:
+                                fig_hist.add_annotation(
+                                    x=df_hist_fixed.iloc[min(i+2, len(df_hist_fixed)-1)]["timestamp"],
+                                    y=(row["Top"] + row["Bottom"]) / 2,
+                                    text="FVG",
+                                    showarrow=False,
+                                    font=dict(size=10, color=color, family="Arial Black"),
+                                    bgcolor="rgba(255,255,255,0.8)",
+                                    bordercolor=color,
+                                    borderwidth=1
+                                )
+                # Order Blocks
+                if 'orderblocks' in signals_hist and signals_hist['orderblocks'] is not None:
+                    ob_data = signals_hist['orderblocks']
+                    ob_count = 0
+                    for i, row in ob_data.iterrows():
+                        if pd.notna(row.get('OB', None)):
+                            ob_count += 1
+                            is_bullish = row['OB'] == 1
+                            color = '#4CAF50' if is_bullish else '#F44336'
+                            fig_hist.add_shape(
+                                type="rect",
+                                x0=df_hist_fixed.iloc[i]["timestamp"],
+                                x1=df_hist_fixed.iloc[min(i+12, len(df_hist_fixed)-1)]["timestamp"],
+                                y0=row["Bottom"],
+                                y1=row["Top"],
+                                fillcolor=color,
+                                opacity=0.2,
+                                line=dict(color=color, width=2)
+                            )
+                            # Anotación OB
+                            fig_hist.add_annotation(
+                                x=df_hist_fixed.iloc[min(i+3, len(df_hist_fixed)-1)]["timestamp"],
+                                y=(row["Top"] + row["Bottom"]) / 2,
+                                text="OB",
+                                showarrow=False,
+                                font=dict(size=12, color="white", family="Arial Black"),
+                                bgcolor=color,
+                                bordercolor=color,
+                                borderwidth=1
+                            )
+                # BOS/CHoCH
+                if 'bos_choch' in signals_hist and signals_hist['bos_choch'] is not None:
+                    bos_choch_data = signals_hist['bos_choch']
+                    bos_choch_count = 0
+                    for i, row in bos_choch_data.iterrows():
+                        val = row.get("Signal", row.get("BOS", row.get("CHoCH", None)))
+                        if pd.notna(val):
+                            bos_choch_count += 1
+                            fig_hist.add_shape(
+                                type="line",
+                                x0=df_hist_fixed.iloc[i]["timestamp"],
+                                x1=df_hist_fixed.iloc[i]["timestamp"],
+                                y0=df_hist_fixed.iloc[i]["low"] * 0.999,
+                                y1=df_hist_fixed.iloc[i]["high"] * 1.001,
+                                line=dict(color="#9C27B0", width=3, dash="dash")
+                            )
+                            fig_hist.add_annotation(
+                                x=df_hist_fixed.iloc[i]["timestamp"],
+                                y=df_hist_fixed.iloc[i]["high"] * 1.002,
+                                text=f"BOS" if "BOS" in str(val) else "CHoCH",
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=2,
+                                arrowcolor="#9C27B0",
+                                font=dict(size=10, color="white", family="Arial Black"),
+                                bgcolor="#9C27B0",
+                                bordercolor="#9C27B0",
+                                borderwidth=1
+                            )
+                # Liquidity
+                if 'liquidity' in signals_hist and signals_hist['liquidity'] is not None:
+                    liq_data = signals_hist['liquidity']
+                    liq_count = 0
+                    for i, row in liq_data.iterrows():
+                        val = row.get("Sweep", row.get("Liquidity", None))
+                        if pd.notna(val):
+                            liq_count += 1
+                            price = row.get("Price", row.get("Level", df_hist_fixed.iloc[i]["high"]))
+                            fig_hist.add_shape(
+                                type="line",
+                                x0=df_hist_fixed.iloc[max(0, i-5)]["timestamp"],
+                                x1=df_hist_fixed.iloc[min(i+5, len(df_hist_fixed)-1)]["timestamp"],
+                                y0=price,
+                                y1=price,
+                                line=dict(color="#FFD700", width=2, dash="solid")
+                            )
+                            fig_hist.add_annotation(
+                                x=df_hist_fixed.iloc[i]["timestamp"],
+                                y=price,
+                                text="LIQ",
+                                showarrow=False,
+                                font=dict(size=9, color="black", family="Arial Black"),
+                                bgcolor="#FFD700",
+                                bordercolor="#FFD700",
+                                borderwidth=1
+                            )
+                # Swings
+                if 'swing_highs_lows' in signals_hist and signals_hist['swing_highs_lows'] is not None:
+                    swing_data = signals_hist['swing_highs_lows']
+                    for i, row in swing_data.iterrows():
+                        if pd.notna(row.get("HighLow", None)):
+                            if row["HighLow"] == 1:
+                                fig_hist.add_trace(go.Scatter(
+                                    x=[df_hist_fixed.iloc[i]["timestamp"]],
+                                    y=[df_hist_fixed.iloc[i]["high"]],
+                                    mode="markers+text",
+                                    marker=dict(color="#FF5722", size=12, symbol="triangle-down", line=dict(color="white", width=1)),
+                                    text=["H"],
+                                    textposition="middle center",
+                                    textfont=dict(color="white", size=8, family="Arial Black"),
+                                    name="Swing High",
+                                    showlegend=False,
+                                    hovertemplate="Swing High<br>Price: %{y}<br>Time: %{x}<extra></extra>"
+                                ))
+                            elif row["HighLow"] == -1:
+                                fig_hist.add_trace(go.Scatter(
+                                    x=[df_hist_fixed.iloc[i]["timestamp"]],
+                                    y=[df_hist_fixed.iloc[i]["low"]],
+                                    mode="markers+text",
+                                    marker=dict(color="#4CAF50", size=12, symbol="triangle-up", line=dict(color="white", width=1)),
+                                    text=["L"],
+                                    textposition="middle center",
+                                    textfont=dict(color="white", size=8, family="Arial Black"),
+                                    name="Swing Low",
+                                    showlegend=False,
+                                    hovertemplate="Swing Low<br>Price: %{y}<br>Time: %{x}<extra></extra>"
+                                ))
+            except Exception as e:
+                st.warning(f"Error al renderizar indicadores históricos: {e}")
+            st.plotly_chart(fig_hist, use_container_width=True)
         if modo == "Solo histórico":
             st.write("Visualización simple del histórico del par.")
         elif modo == "Indicadores históricos":

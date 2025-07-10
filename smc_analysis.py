@@ -28,9 +28,23 @@ def detect_liquidity(df, swing_highs_lows, timeframe="15m"):
         if hasattr(liquidity, 'Level'):
             mask = liquidity['Level'].notna() & (liquidity['Level'].abs() > threshold)
             filtered = liquidity[mask]
-            if filtered.empty:
-                print(f"[LIQUIDITY][WARN] No se detectaron zonas válidas con threshold {threshold:.6f}")
-            return filtered
+            if not filtered.empty:
+                return filtered
+            # Si no hay zonas válidas, relajar el threshold a la mitad
+            relaxed_threshold = threshold * 0.5
+            mask_relaxed = liquidity['Level'].notna() & (liquidity['Level'].abs() > relaxed_threshold)
+            filtered_relaxed = liquidity[mask_relaxed]
+            if not filtered_relaxed.empty:
+                print(f"[LIQUIDITY][INFO] Zonas detectadas con threshold relajado {relaxed_threshold:.6f}")
+                return filtered_relaxed
+            # Si sigue vacío, devolver todas las zonas con Level no nulo
+            mask_any = liquidity['Level'].notna()
+            filtered_any = liquidity[mask_any]
+            if not filtered_any.empty:
+                print(f"[LIQUIDITY][INFO] Zonas devueltas sin filtrar por magnitud")
+                return filtered_any
+            print(f"[LIQUIDITY][WARN] No se detectaron zonas válidas con threshold {threshold:.6f} ni relajado")
+            return liquidity
         return liquidity
     except Exception as e:
         print(f"[LIQUIDITY][ERROR] {e}")
