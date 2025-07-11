@@ -20,11 +20,10 @@ def detect_liquidity(df, swing_highs_lows, timeframe="15m"):
     # Calcular factor de volatilidad relativo
     volatility_factor = df['high'].std() / df['close'].mean() if df['close'].mean() > 0 else 1
     threshold = base_threshold.get(timeframe, 0.002) * max(volatility_factor, 0.5)
-    # Logging para monitoreo
     print(f"[LIQUIDITY] Timeframe: {timeframe}, Threshold: {threshold:.6f}, VolFactor: {volatility_factor:.4f}")
     try:
         liquidity = smc.liquidity(df, swing_highs_lows)
-        # Filtrar por threshold adaptativo si existe columna 'Level'
+        # Filtrado progresivo como en la versión anterior
         if hasattr(liquidity, 'Level'):
             mask = liquidity['Level'].notna() & (liquidity['Level'].abs() > threshold)
             filtered = liquidity[mask]

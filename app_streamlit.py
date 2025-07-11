@@ -256,6 +256,9 @@ bot_enabled = st.sidebar.checkbox("Habilitar SMC Bot", value=True)
 show_signals = st.sidebar.checkbox("Mostrar Señales", value=True)
 show_bot_metrics = st.sidebar.checkbox("Mostrar Métricas", value=True)
 trade_engine_enabled = st.sidebar.checkbox("Habilitar Motor de Trading", value=False)
+# --- CONTEXTO HTF ---
+htf_enabled = st.sidebar.checkbox("Usar contexto HTF", value=False, help="Filtrar señales según contexto de marco temporal superior")
+htf_timeframe = st.sidebar.selectbox("HTF Timeframe", ["1h", "4h", "1d"], index=0, help="Marco temporal superior para contexto HTF") if htf_enabled else None
 if trade_engine_enabled:
     min_risk_reward = st.sidebar.slider("Risk/Reward Mínimo", 1.5, 5.0, 2.0, 0.5)
     max_risk_percent = st.sidebar.slider("Riesgo Máximo (%)", 0.5, 5.0, 1.0, 0.5)
@@ -295,9 +298,207 @@ show_future_signals = st.sidebar.checkbox("Mostrar Señales Futuras", value=Fals
 show_historical_charts = st.sidebar.checkbox("Gráficos Históricos", value=False, help="Mostrar gráficos de evolución histórica")
 
 # --- TABS PRINCIPALES ---
-tab_overview, tab_setups, tab_signals, tab_backtest, tab_config = st.tabs([
-    "Visión General", "Setups & Confluencias", "Señales y Trading", "Backtesting & Histórico", "Configuración"
+
+# Añadir la pestaña de ejemplo visual didáctico
+tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_ejemplo = st.tabs([
+    "Visión General", "Setups & Confluencias", "Señales y Trading", "Backtesting & Histórico", "Configuración", "Ejemplo Visual"
 ])
+# --- EJEMPLO VISUAL DIDÁCTICO ---
+with tab_ejemplo:
+    st.header("Ejemplo Visual Didáctico: Estrategia SMC Simplified by TJR (LONG y SHORT)")
+    st.markdown("""
+    Ejemplos paso a paso de una señal LONG y una señal SHORT según la metodología SMC Simplified by TJR. Cada gráfico muestra: zona de liquidez, sweep, FVG, Order Block, CHoCH, señal, SL y TP.
+    """)
+
+    import plotly.graph_objects as go
+    import numpy as np
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    col_long, col_short = st.columns(2)
+
+    # --- Ejemplo LONG ---
+    with col_long:
+        st.subheader("Señal LONG (Compra)")
+        scenario_long = {
+            'symbol': 'EXAMPLE/USDT',
+            'timeframe': '15m',
+            'structure': 'Bullish',
+            'liquidity_zone': {'type': 'equal_lows', 'price': 1.0850},
+            'sweep': {'low': 1.0835},
+            'fvg': {'start': 1.0870, 'end': 1.0895},
+            'order_block': {'low': 1.0840, 'high': 1.0860},
+            'choch': {'confirmed_at': '2025-07-08 11:15'},
+            'entry': 1.0865,
+            'sl': 1.0830,
+            'tp': 1.0930,
+            'result': 'TP Hit ✅'
+        }
+        # Simular velas OHLC para el escenario
+        n = 30
+        base = 1.0850
+        np.random.seed(1)
+        prices = np.linspace(base, scenario_long['tp'], n)
+        # Simular el desarrollo: zona de liquidez, sweep, fvg, ob, choch, entrada, sl, tp
+        ohlc = []
+        for i in range(n):
+            if i < 5:
+                open_ = close_ = base
+                high = base + 0.0005
+                low = base - 0.0005
+            elif i == 5:
+                open_ = base
+                close_ = scenario_long['sweep']['low']
+                high = open_ + 0.0005
+                low = scenario_long['sweep']['low'] - 0.0005
+            elif 6 <= i < 10:
+                open_ = close_ = scenario_long['fvg']['start'] - 0.001
+                high = open_ + 0.001
+                low = open_ - 0.001
+            elif 10 <= i < 13:
+                open_ = close_ = scenario_long['order_block']['low']
+                high = scenario_long['order_block']['high']
+                low = scenario_long['order_block']['low'] - 0.0005
+            elif i == 13:
+                open_ = close_ = scenario_long['entry']
+                high = open_ + 0.0007
+                low = open_ - 0.0007
+            elif 14 <= i < 20:
+                open_ = close_ = scenario_long['entry'] + (i-13)*0.0007
+                high = open_ + 0.0005
+                low = open_ - 0.0005
+            elif i == 20:
+                open_ = close_ = scenario_long['tp']
+                high = open_ + 0.0005
+                low = open_ - 0.0005
+            else:
+                open_ = close_ = scenario_long['tp']
+                high = open_ + 0.0002
+                low = open_ - 0.0002
+            ohlc.append([open_, high, low, close_])
+        df_long = pd.DataFrame(ohlc, columns=['open','high','low','close'])
+        df_long['timestamp'] = [datetime(2025,7,8,10,0) + timedelta(minutes=15*i) for i in range(n)]
+        # Gráfico
+        fig_long = go.Figure()
+        fig_long.add_trace(go.Candlestick(
+            x=df_long['timestamp'], open=df_long['open'], high=df_long['high'], low=df_long['low'], close=df_long['close'], name='Precio'))
+        # Zona de liquidez (equal lows)
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'][8], y0=scenario_long['liquidity_zone']['price'], y1=scenario_long['liquidity_zone']['price'], line=dict(color="#FFD700", width=2, dash="dot"))
+        fig_long.add_annotation(x=df_long['timestamp'][2], y=scenario_long['liquidity_zone']['price']+0.0002, text="Equal Lows (Liquidez)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        # Sweep
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][5], x1=df_long['timestamp'][5], y0=scenario_long['liquidity_zone']['price'], y1=scenario_long['sweep']['low'], line=dict(color="#F44336", width=2, dash="dash"))
+        fig_long.add_annotation(x=df_long['timestamp'][5], y=scenario_long['sweep']['low']-0.0002, text="Sweep", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
+        # FVG
+        fig_long.add_shape(type="rect", x0=df_long['timestamp'][6], x1=df_long['timestamp'][9], y0=scenario_long['fvg']['start'], y1=scenario_long['fvg']['end'], fillcolor="#2962FF", opacity=0.2, line=dict(color="#2962FF", width=1, dash="dot"))
+        fig_long.add_annotation(x=df_long['timestamp'][7], y=scenario_long['fvg']['end']+0.0002, text="FVG", showarrow=False, font=dict(color="#2962FF"), bgcolor="#232323")
+        # Order Block
+        fig_long.add_shape(type="rect", x0=df_long['timestamp'][10], x1=df_long['timestamp'][12], y0=scenario_long['order_block']['low'], y1=scenario_long['order_block']['high'], fillcolor="#4CAF50", opacity=0.2, line=dict(color="#4CAF50", width=1))
+        fig_long.add_annotation(x=df_long['timestamp'][11], y=scenario_long['order_block']['high']+0.0002, text="Order Block", showarrow=False, font=dict(color="#4CAF50"), bgcolor="#232323")
+        # CHoCH
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][13], x1=df_long['timestamp'][13], y0=scenario_long['order_block']['low'], y1=scenario_long['order_block']['high'], line=dict(color="#9C27B0", width=2, dash="dash"))
+        fig_long.add_annotation(x=df_long['timestamp'][13], y=scenario_long['order_block']['high']+0.0005, text="CHoCH", showarrow=True, arrowhead=2, font=dict(color="#9C27B0"), bgcolor="#232323")
+        # Entrada, SL, TP
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][13], x1=df_long['timestamp'][13], y0=scenario_long['sl'], y1=scenario_long['entry'], line=dict(color="#26A69A", width=3, dash="dot"))
+        fig_long.add_annotation(x=df_long['timestamp'][13], y=scenario_long['entry']+0.0003, text="Entrada LONG", showarrow=True, arrowhead=2, font=dict(color="#26A69A"), bgcolor="#232323")
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'].iloc[-1], y0=scenario_long['sl'], y1=scenario_long['sl'], line=dict(color="#EF5350", width=2, dash="dash"))
+        fig_long.add_annotation(x=df_long['timestamp'][2], y=scenario_long['sl']-0.0002, text="Stop Loss", showarrow=False, font=dict(color="#EF5350"), bgcolor="#232323")
+        fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'].iloc[-1], y0=scenario_long['tp'], y1=scenario_long['tp'], line=dict(color="#FFD700", width=2, dash="dash"))
+        fig_long.add_annotation(x=df_long['timestamp'][20], y=scenario_long['tp']+0.0002, text="Take Profit", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        # Resultado
+        fig_long.add_annotation(x=df_long['timestamp'][21], y=scenario_long['tp']+0.0005, text=scenario_long['result'], showarrow=False, font=dict(color="#26A69A", size=14, family="Arial Black"), bgcolor="#232323")
+        fig_long.update_layout(title="Ejemplo LONG SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Tiempo", color="#fff"), yaxis=dict(title="Precio", color="#fff"))
+        st.plotly_chart(fig_long, use_container_width=True)
+        st.info(f"**Estructura:** {scenario_long['structure']} | **Entrada:** {scenario_long['entry']} | **SL:** {scenario_long['sl']} | **TP:** {scenario_long['tp']} | {scenario_long['result']}")
+
+    # --- Ejemplo SHORT ---
+    with col_short:
+        st.subheader("Señal SHORT (Venta)")
+        scenario_short = {
+            'symbol': 'EXAMPLE/USDT',
+            'timeframe': '15m',
+            'structure': 'Bearish',
+            'liquidity_zone': {'type': 'equal_highs', 'price': 1.1020},
+            'sweep': {'high': 1.1035},
+            'fvg': {'start': 1.0995, 'end': 1.0975},
+            'order_block': {'low': 1.0980, 'high': 1.1000},
+            'choch': {'confirmed_at': '2025-07-08 14:30'},
+            'entry': 1.0990,
+            'sl': 1.1040,
+            'tp': 1.0925,
+            'result': 'TP Hit ✅'
+        }
+        n = 30
+        base = 1.1020
+        np.random.seed(2)
+        prices = np.linspace(base, scenario_short['tp'], n)
+        ohlc = []
+        for i in range(n):
+            if i < 5:
+                open_ = close_ = base
+                high = base + 0.0005
+                low = base - 0.0005
+            elif i == 5:
+                open_ = base
+                close_ = scenario_short['sweep']['high']
+                high = scenario_short['sweep']['high'] + 0.0005
+                low = open_ - 0.0005
+            elif 6 <= i < 10:
+                open_ = close_ = scenario_short['fvg']['start'] + 0.001
+                high = open_ + 0.001
+                low = open_ - 0.001
+            elif 10 <= i < 13:
+                open_ = close_ = scenario_short['order_block']['high']
+                high = scenario_short['order_block']['high'] + 0.0005
+                low = scenario_short['order_block']['low']
+            elif i == 13:
+                open_ = close_ = scenario_short['entry']
+                high = open_ + 0.0007
+                low = open_ - 0.0007
+            elif 14 <= i < 20:
+                open_ = close_ = scenario_short['entry'] - (i-13)*0.0007
+                high = open_ + 0.0005
+                low = open_ - 0.0005
+            elif i == 20:
+                open_ = close_ = scenario_short['tp']
+                high = open_ + 0.0005
+                low = open_ - 0.0005
+            else:
+                open_ = close_ = scenario_short['tp']
+                high = open_ + 0.0002
+                low = open_ - 0.0002
+            ohlc.append([open_, high, low, close_])
+        df_short = pd.DataFrame(ohlc, columns=['open','high','low','close'])
+        df_short['timestamp'] = [datetime(2025,7,8,13,0) + timedelta(minutes=15*i) for i in range(n)]
+        fig_short = go.Figure()
+        fig_short.add_trace(go.Candlestick(
+            x=df_short['timestamp'], open=df_short['open'], high=df_short['high'], low=df_short['low'], close=df_short['close'], name='Precio'))
+        # Zona de liquidez (equal highs)
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'][8], y0=scenario_short['liquidity_zone']['price'], y1=scenario_short['liquidity_zone']['price'], line=dict(color="#FFD700", width=2, dash="dot"))
+        fig_short.add_annotation(x=df_short['timestamp'][2], y=scenario_short['liquidity_zone']['price']+0.0002, text="Equal Highs (Liquidez)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        # Sweep
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][5], x1=df_short['timestamp'][5], y0=scenario_short['liquidity_zone']['price'], y1=scenario_short['sweep']['high'], line=dict(color="#F44336", width=2, dash="dash"))
+        fig_short.add_annotation(x=df_short['timestamp'][5], y=scenario_short['sweep']['high']+0.0002, text="Sweep", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
+        # FVG
+        fig_short.add_shape(type="rect", x0=df_short['timestamp'][6], x1=df_short['timestamp'][9], y0=scenario_short['fvg']['end'], y1=scenario_short['fvg']['start'], fillcolor="#FF6D00", opacity=0.2, line=dict(color="#FF6D00", width=1, dash="dot"))
+        fig_short.add_annotation(x=df_short['timestamp'][7], y=scenario_short['fvg']['start']+0.0002, text="FVG", showarrow=False, font=dict(color="#FF6D00"), bgcolor="#232323")
+        # Order Block
+        fig_short.add_shape(type="rect", x0=df_short['timestamp'][10], x1=df_short['timestamp'][12], y0=scenario_short['order_block']['low'], y1=scenario_short['order_block']['high'], fillcolor="#F44336", opacity=0.2, line=dict(color="#F44336", width=1))
+        fig_short.add_annotation(x=df_short['timestamp'][11], y=scenario_short['order_block']['high']+0.0002, text="Order Block", showarrow=False, font=dict(color="#F44336"), bgcolor="#232323")
+        # CHoCH
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][13], x1=df_short['timestamp'][13], y0=scenario_short['order_block']['low'], y1=scenario_short['order_block']['high'], line=dict(color="#9C27B0", width=2, dash="dash"))
+        fig_short.add_annotation(x=df_short['timestamp'][13], y=scenario_short['order_block']['high']+0.0005, text="CHoCH", showarrow=True, arrowhead=2, font=dict(color="#9C27B0"), bgcolor="#232323")
+        # Entrada, SL, TP
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][13], x1=df_short['timestamp'][13], y0=scenario_short['entry'], y1=scenario_short['sl'], line=dict(color="#F44336", width=3, dash="dot"))
+        fig_short.add_annotation(x=df_short['timestamp'][13], y=scenario_short['entry']-0.0003, text="Entrada SHORT", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'].iloc[-1], y0=scenario_short['sl'], y1=scenario_short['sl'], line=dict(color="#EF5350", width=2, dash="dash"))
+        fig_short.add_annotation(x=df_short['timestamp'][2], y=scenario_short['sl']+0.0002, text="Stop Loss", showarrow=False, font=dict(color="#EF5350"), bgcolor="#232323")
+        fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'].iloc[-1], y0=scenario_short['tp'], y1=scenario_short['tp'], line=dict(color="#FFD700", width=2, dash="dash"))
+        fig_short.add_annotation(x=df_short['timestamp'][20], y=scenario_short['tp']-0.0002, text="Take Profit", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        # Resultado
+        fig_short.add_annotation(x=df_short['timestamp'][21], y=scenario_short['tp']-0.0005, text=scenario_short['result'], showarrow=False, font=dict(color="#F44336", size=14, family="Arial Black"), bgcolor="#232323")
+        fig_short.update_layout(title="Ejemplo SHORT SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Tiempo", color="#fff"), yaxis=dict(title="Precio", color="#fff"))
+        st.plotly_chart(fig_short, use_container_width=True)
+        st.info(f"**Estructura:** {scenario_short['structure']} | **Entrada:** {scenario_short['entry']} | **SL:** {scenario_short['sl']} | **TP:** {scenario_short['tp']} | {scenario_short['result']}")
 
 # --- VISIÓN GENERAL ---
 with tab_overview:
@@ -374,17 +575,33 @@ with tab_overview:
                 st.error(f"❌ Error detallado en SMC Bot: {str(e)}")
                 bot_analysis = None
 
-        # Análisis del Motor de Trading TJR
+        # --- CONTEXTO HTF Y LOGGING DETALLADO ---
+        import logging
+        logging.basicConfig(level=logging.INFO)
         trade_analysis = None
+        htf_context = None
         if trade_engine_enabled and bot_analysis:
             try:
                 with st.spinner("⚡ Ejecutando Motor de Trading TJR..."):
+                    # Si HTF está activado, obtener contexto HTF (pero NO pasar a la función si no lo soporta)
+                    if htf_enabled and htf_timeframe:
+                        htf_df = get_ohlcv_extended(symbol, htf_timeframe, days=data_days)
+                        htf_signals = analyze(htf_df)
+                        htf_context = {
+                            'trend': htf_signals.get('trend', None),
+                            'session': get_current_session(htf_df.iloc[-1]['timestamp']) if len(htf_df) > 0 else None
+                        }
+                        logging.info(f"[HTF] Contexto HTF ({htf_timeframe}): {htf_context}")
+                    # Llamada sin htf_context (para compatibilidad)
                     trade_analysis = get_trade_engine_analysis(df, bot_analysis)
                     if trade_analysis['signal_count'] > 0:
                         show_temp_message('success', f"✅ Motor TJR: {trade_analysis['signal_count']} señales detectadas")
+                        for sig in trade_analysis['signals']:
+                            logging.info(f"[SIGNAL] {sig.signal_type.value} | Score: {getattr(sig, 'score', 'N/A')} | Confianza: {getattr(sig, 'confidence', 'N/A')}")
                     else:
                         st.info("ℹ️ Motor TJR: No hay señales en este momento")
             except Exception as e:
+                logging.error(f"Error en Motor TJR: {e}")
                 st.sidebar.error(f"Error en Motor TJR: {e}")
                 st.error(f"❌ Error detallado en Motor TJR: {str(e)}")
                 trade_analysis = None
@@ -636,86 +853,90 @@ with tab_overview:
                 borderwidth=1
             )
 
-    # ➕ Añadir Liquidity Sweeps con estilo TradingView
+    # ➕ Añadir Liquidity Sweeps usando la columna 'Level' (de detect_liquidity) si existe
     liq_data = signals["liquidity"]
     liq_count = 0
-    for i, row in liq_data.iterrows():
-        if pd.notna(row.get("Sweep", row.get("Liquidity", None))):
-            liq_count += 1
-            price = row.get("Price", df.iloc[i]["high"])
-
-            # Línea horizontal para Liquidity
-            fig.add_shape(
-                type="line",
-                x0=df.iloc[max(0, i-5)]["timestamp"],
-                x1=df.iloc[min(i+5, len(df)-1)]["timestamp"],
-                y0=price,
-                y1=price,
-                line=dict(color="#FFD700", width=2, dash="solid")  # Dorado TradingView
-            )
-
-            # Añadir texto identificativo
-            fig.add_annotation(
-                x=df.iloc[i]["timestamp"],
-                y=price,
-                text="LIQ",
-                showarrow=False,
-                font=dict(size=9, color="black", family="Arial Black"),
-                bgcolor="#FFD700",
-                bordercolor="#FFD700",
-                borderwidth=1
-            )
+    if liq_data is not None:
+        for i, row in liq_data.iterrows():
+            # Usar 'Sweep' si existe, si no 'Liquidity' (compatibilidad)
+            trigger = row.get("Sweep", row.get("Liquidity", None))
+            if pd.notna(trigger):
+                liq_count += 1
+                # Usar 'Price' si existe, si no 'Level', si no el high de la vela
+                price = row.get("Price", row.get("Level", df.iloc[i]["high"]))
+                # Línea horizontal para Liquidity
+                fig.add_shape(
+                    type="line",
+                    x0=df.iloc[max(0, i-5)]["timestamp"],
+                    x1=df.iloc[min(i+5, len(df)-1)]["timestamp"],
+                    y0=price,
+                    y1=price,
+                    line=dict(color="#FFD700", width=2, dash="solid")  # Dorado TradingView
+                )
+                # Añadir texto identificativo
+                fig.add_annotation(
+                    x=df.iloc[i]["timestamp"],
+                    y=price,
+                    text="LIQ",
+                    showarrow=False,
+                    font=dict(size=9, color="black", family="Arial Black"),
+                    bgcolor="#FFD700",
+                    bordercolor="#FFD700",
+                    borderwidth=1
+                )
 
     # ➕ Añadir Swing Highs/Lows con estilo TradingView
-    swing_data = signals["swing_highs_lows"]
+    swing_data = signals.get("swing_highs_lows", None)
     swing_high_count = 0
     swing_low_count = 0
-    for i, row in swing_data.iterrows():
-        if pd.notna(row["HighLow"]):
-            if row["HighLow"] == 1:  # Swing High
-                swing_high_count += 1
-                fig.add_trace(go.Scatter(
-                    x=[df.iloc[i]["timestamp"]],
-                    y=[df.iloc[i]["high"]],
-                    mode="markers+text",
-                    marker=dict(color="#FF5722", size=12, symbol="triangle-down", line=dict(color="white", width=1)),
-                    text=["H"],
-                    textposition="middle center",
-                    textfont=dict(color="white", size=8, family="Arial Black"),
-                    name="Swing High",
-                    showlegend=False,
-                    hovertemplate="Swing High<br>Price: %{y}<br>Time: %{x}<extra></extra>"
-                ))
-            elif row["HighLow"] == -1:  # Swing Low
-                swing_low_count += 1
-                fig.add_trace(go.Scatter(
-                    x=[df.iloc[i]["timestamp"]],
-                    y=[df.iloc[i]["low"]],
-                    mode="markers+text",
-                    marker=dict(color="#4CAF50", size=12, symbol="triangle-up", line=dict(color="white", width=1)),
-                    text=["L"],
-                    textposition="middle center",
-                    textfont=dict(color="white", size=8, family="Arial Black"),
-                    name="Swing Low",
-                    showlegend=False,
-                    hovertemplate="Swing Low<br>Price: %{y}<br>Time: %{x}<extra></extra>"
-                ))
+    if swing_data is not None and hasattr(swing_data, 'iterrows'):
+        for i, row in swing_data.iterrows():
+            highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
+            if pd.notna(highlow):
+                # Añadir score/confianza como tooltip si existe
+                score = row["score"] if "score" in row else None
+                confidence = row["confidence"] if "confidence" in row else None
+                hovertext = f"Score: {score:.2f}<br>Confianza: {confidence:.2f}" if score is not None or confidence is not None else None
+                if highlow == 1:  # Swing High
+                    swing_high_count += 1
+                    fig.add_trace(go.Scatter(
+                        x=[df.iloc[i]["timestamp"]],
+                        y=[df.iloc[i]["high"]],
+                        mode="markers+text",
+                        marker=dict(color="#FF5722", size=12, symbol="triangle-down", line=dict(color="white", width=1)),
+                        text=["H"],
+                        textposition="middle center",
+                        textfont=dict(color="white", size=8, family="Arial Black"),
+                        name="Swing High",
+                        showlegend=False,
+                        hovertemplate=(hovertext or "Swing High<br>Price: %{y}<br>Time: %{x}<extra></extra>")
+                    ))
+                elif highlow == -1:  # Swing Low
+                    swing_low_count += 1
+                    fig.add_trace(go.Scatter(
+                        x=[df.iloc[i]["timestamp"]],
+                        y=[df.iloc[i]["low"]],
+                        mode="markers+text",
+                        marker=dict(color="#4CAF50", size=12, symbol="triangle-up", line=dict(color="white", width=1)),
+                        text=["L"],
+                        textposition="middle center",
+                        textfont=dict(color="white", size=8, family="Arial Black"),
+                        name="Swing Low",
+                        showlegend=False,
+                        hovertemplate=(hovertext or "Swing Low<br>Price: %{y}<br>Time: %{x}<extra></extra>")
+                    ))
 
     # Configurar el layout con estilo TradingView
+
     fig.update_layout(
-        # Fondo oscuro como TradingView
         paper_bgcolor='#1E1E1E',
         plot_bgcolor='#1E1E1E',
-
-        # Título y configuración
         title={
             'text': f"{symbol} • {timeframe} • Smart Money Concepts",
             'font': {'size': 18, 'color': '#FFFFFF', 'family': 'Arial'},
             'x': 0.5,
             'xanchor': 'center'
         },
-
-        # Configuración de ejes
         xaxis=dict(
             showgrid=True,
             gridcolor='#2A2A2A',
@@ -727,10 +948,9 @@ with tab_overview:
             spikemode='across',
             tickfont=dict(color='#FFFFFF'),
             title=dict(text='Tiempo', font=dict(color='#FFFFFF')),
-            rangeslider=dict(visible=False),  # Asegurar que no haya rangeslider
-            fixedrange=False  # Permitir zoom
+            rangeslider=dict(visible=False),
+            fixedrange=False
         ),
-
         yaxis=dict(
             showgrid=True,
             gridcolor='#2A2A2A',
@@ -742,30 +962,26 @@ with tab_overview:
             spikemode='across',
             tickfont=dict(color='#FFFFFF'),
             title=dict(text='Precio', font=dict(color='#FFFFFF')),
-            side='right',  # Precio a la derecha como TradingView
-            fixedrange=False  # Permitir zoom
+            side='right',
+            fixedrange=False
         ),
-
-        # Configuración general
         xaxis_rangeslider_visible=False,
         showlegend=False,
         height=650,
-
-        # Hover mode
         hovermode='x unified',
-
-        # Márgenes ajustados para evitar truncamiento
         margin=dict(l=10, r=80, t=60, b=40),
-
-        # Configuración del crosshair
         xaxis_showspikes=True,
         yaxis_showspikes=True,
         spikedistance=1000,
         hoverdistance=100,
-
-        # Configuración de autosize
-        autosize=True
+        autosize=True,
+        dragmode='pan',  # Permite arrastrar para desplazarse
     )
+
+    # Configuración avanzada de interacción tipo TradingView
+    fig.update_xaxes(fixedrange=False, rangeslider_visible=False, constrain='domain',
+                     scaleratio=None, scaleanchor=None)
+    fig.update_yaxes(fixedrange=False, constrain='domain', scaleratio=None, scaleanchor=None)
 
     # Configurar hover template personalizado para las velas
     fig.update_traces(
@@ -781,9 +997,10 @@ with tab_overview:
         st.plotly_chart(fig, use_container_width=True, key="main_chart_display", config={
             'displayModeBar': True,
             'displaylogo': False,
-            'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d'],
-            'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawrect'],
-            'scrollZoom': True
+            'modeBarButtonsToRemove': ['zoom2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d', 'zoomIn2d', 'zoomOut2d', 'pan2d'],
+            'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawrect', 'pan2d'],
+            'scrollZoom': True,  # Permite zoom con scroll en ejes
+            'doubleClick': 'reset',
         })
         show_temp_message('success', "✅ Gráfico renderizado exitosamente")
 
@@ -834,7 +1051,15 @@ with tab_signals:
     if show_signals_tab and signals_list:
         st.subheader("Señales Activas")
         for i, signal in enumerate(signals_list):
-            st.write(f"{i+1}. {signal.signal_type.value} | Entrada: {signal.entry_price} | SL: {signal.stop_loss} | TP: {signal.take_profit} | Confianza: {signal.confidence:.2f}")
+            # Visualización de score y confianza
+            score = getattr(signal, 'score', None)
+            confidence = getattr(signal, 'confidence', None)
+            score_str = f" | Score: {score:.2f}" if score is not None else ""
+            conf_str = f" | Confianza: {confidence:.2f}" if confidence is not None else ""
+            st.write(f"{i+1}. {signal.signal_type.value} | Entrada: {signal.entry_price} | SL: {signal.stop_loss} | TP: {signal.take_profit}{score_str}{conf_str}")
+            # Visualización gráfica de score/confianza
+            if score is not None or confidence is not None:
+                st.progress(min(int((score or confidence)*100), 100), text=f"Score: {score:.2f} | Confianza: {confidence:.2f}")
     else:
         st.info("No hay señales activas.")
 
