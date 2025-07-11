@@ -949,7 +949,11 @@ with tab_overview:
             tickfont=dict(color='#FFFFFF'),
             title=dict(text='Tiempo', font=dict(color='#FFFFFF')),
             rangeslider=dict(visible=False),
-            fixedrange=False
+            fixedrange=False,
+            constrain='range',
+            scaleratio=None,
+            scaleanchor=None,
+            autorange=True
         ),
         yaxis=dict(
             showgrid=True,
@@ -963,7 +967,11 @@ with tab_overview:
             tickfont=dict(color='#FFFFFF'),
             title=dict(text='Precio', font=dict(color='#FFFFFF')),
             side='right',
-            fixedrange=False
+            fixedrange=False,
+            constrain='range',
+            scaleratio=None,
+            scaleanchor=None,
+            autorange=True
         ),
         xaxis_rangeslider_visible=False,
         showlegend=False,
@@ -975,7 +983,7 @@ with tab_overview:
         spikedistance=1000,
         hoverdistance=100,
         autosize=True,
-        dragmode='pan',  # Permite arrastrar para desplazarse
+        dragmode='zoom',  # Cambia a zoom para que el scroll y arrastre hagan zoom, no pan
     )
 
     # Configuración avanzada de interacción tipo TradingView
@@ -997,10 +1005,16 @@ with tab_overview:
         st.plotly_chart(fig, use_container_width=True, key="main_chart_display", config={
             'displayModeBar': True,
             'displaylogo': False,
-            'modeBarButtonsToRemove': ['zoom2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d', 'zoomIn2d', 'zoomOut2d', 'pan2d'],
-            'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawrect', 'pan2d'],
+            # Eliminar completamente la opción de pan y solo dejar zoom y reset
+            'modeBarButtonsToRemove': [
+                'zoom2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d',
+                'zoomIn2d', 'zoomOut2d', 'pan2d', 'drawline', 'drawopenpath', 'drawrect', 'drawcircle', 'eraseshape'
+            ],
+            # No añadir pan ni otras herramientas
+            'modeBarButtonsToAdd': [],
             'scrollZoom': True,  # Permite zoom con scroll en ejes
             'doubleClick': 'reset',
+            'displayModeBar': True
         })
         show_temp_message('success', "✅ Gráfico renderizado exitosamente")
 
@@ -1009,63 +1023,63 @@ with tab_overview:
 with tab_setups:
     st.header("Setups & Confluencias")
     # Mostrar setups del snapshot histórico si está en modo histórico y snapshot seleccionado
-    show_setups = False
-    setups_data = None
-    if enable_historical and 'historical_manager' in st.session_state and st.session_state.historical_manager.snapshots:
-        idx = st.session_state.get('snap_idx', 0)
-        snapshot = st.session_state.historical_manager.snapshots[idx]
-        bot_analysis_hist = getattr(snapshot, 'bot_analysis', None)
-        if bot_analysis_hist and 'setups' in bot_analysis_hist and bot_analysis_hist['setups'] is not None:
-            setups_data = bot_analysis_hist['setups']
-            show_setups = True
-    elif bot_analysis and 'setups' in bot_analysis and bot_analysis['setups'] is not None:
-        setups_data = bot_analysis['setups']
-        show_setups = True
-    if show_setups and setups_data is not None and not setups_data.empty:
-        st.subheader("Setups Detectados")
-        st.dataframe(setups_data, use_container_width=True)
-    else:
-        st.info("No hay setups detectados.")
-
-
-# --- SEÑALES Y TRADING ---
-with tab_signals:
-    st.header("Señales y Trading")
-    # Mostrar señales del snapshot histórico si está en modo histórico y snapshot seleccionado
-    show_signals_tab = False
-    signals_list = None
-    if enable_historical and 'historical_manager' in st.session_state and st.session_state.historical_manager.snapshots:
-        idx = st.session_state.get('snap_idx', 0)
-        snapshot = st.session_state.historical_manager.snapshots[idx]
-        if hasattr(snapshot, 'signals') and snapshot.signals:
-            signals_list = snapshot.signals
-            show_signals_tab = True
-    elif trade_engine_enabled and bot_analysis:
-        try:
-            trade_analysis = get_trade_engine_analysis(df, bot_analysis)
-            if trade_analysis['signal_count'] > 0:
-                signals_list = trade_analysis['signals']
-                show_signals_tab = True
-        except Exception as e:
-            st.error(f"Error al obtener señales de trading: {e}")
-    if show_signals_tab and signals_list:
-        st.subheader("Señales Activas")
-        for i, signal in enumerate(signals_list):
-            # Visualización de score y confianza
-            score = getattr(signal, 'score', None)
-            confidence = getattr(signal, 'confidence', None)
-            score_str = f" | Score: {score:.2f}" if score is not None else ""
-            conf_str = f" | Confianza: {confidence:.2f}" if confidence is not None else ""
-            st.write(f"{i+1}. {signal.signal_type.value} | Entrada: {signal.entry_price} | SL: {signal.stop_loss} | TP: {signal.take_profit}{score_str}{conf_str}")
-            # Visualización gráfica de score/confianza
-            if score is not None or confidence is not None:
-                st.progress(min(int((score or confidence)*100), 100), text=f"Score: {score:.2f} | Confianza: {confidence:.2f}")
-    else:
-        st.info("No hay señales activas.")
-
-# --- BACKTESTING & HISTÓRICO ---
-with tab_backtest:
-    st.header("Backtesting & Histórico")
+    fig.update_layout(
+        paper_bgcolor='#1E1E1E',
+        plot_bgcolor='#1E1E1E',
+        title={
+            'text': f"{symbol} • {timeframe} • Smart Money Concepts",
+            'font': {'size': 18, 'color': '#FFFFFF', 'family': 'Arial'},
+            'x': 0.5,
+            'xanchor': 'center'
+        },
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='#2A2A2A',
+            gridwidth=1,
+            color='#FFFFFF',
+            showspikes=True,
+            spikecolor='#FFFFFF',
+            spikesnap='cursor',
+            spikemode='across',
+            tickfont=dict(color='#FFFFFF'),
+            title=dict(text='Tiempo', font=dict(color='#FFFFFF')),
+            rangeslider=dict(visible=False),
+            fixedrange=False,
+            constrain='range',
+            scaleratio=None,
+            scaleanchor=None,
+            autorange=True
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='#2A2A2A',
+            gridwidth=1,
+            color='#FFFFFF',
+            showspikes=True,
+            spikecolor='#FFFFFF',
+            spikesnap='cursor',
+            spikemode='across',
+            tickfont=dict(color='#FFFFFF'),
+            title=dict(text='Precio', font=dict(color='#FFFFFF')),
+            side='right',
+            fixedrange=False,
+            constrain='range',
+            scaleratio=None,
+            scaleanchor=None,
+            autorange=True
+        ),
+        xaxis_rangeslider_visible=False,
+        showlegend=False,
+        height=650,
+        hovermode='x unified',
+        margin=dict(l=10, r=80, t=60, b=40),
+        xaxis_showspikes=True,
+        yaxis_showspikes=True,
+        spikedistance=1000,
+        hoverdistance=100,
+        autosize=True,
+        dragmode='zoom',  # Forzar solo zoom, nunca pan
+    )
     modo = st.radio(
         "Selecciona el modo:",
         ["Solo histórico", "Indicadores históricos", "Backtest"],
@@ -1301,6 +1315,7 @@ with tab_config:
 # ➕ Panel de métricas mejorado con estilo TradingView
 st.markdown("""
 <style>
+/* Métricas */
 .metric-container {
     background-color: #1E1E1E;
     padding: 10px;
@@ -1317,6 +1332,51 @@ st.markdown("""
     color: #26A69A;
     font-size: 18px;
     font-weight: bold;
+}
+
+/* --- MOBILE OPTIMIZATION --- */
+@media (max-width: 800px) {
+    /* Reduce padding and margin for main container */
+    .main .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        padding-top: 0.5rem !important;
+    }
+    /* Make sidebar collapsible and overlay */
+    section[data-testid="stSidebar"] {
+        min-width: 0 !important;
+        width: 60vw !important;
+        max-width: 80vw !important;
+        z-index: 1000;
+        box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+    }
+    /* Reduce font size for headers and text */
+    h1, h2, h3, h4, h5, h6 {
+        font-size: 1.1em !important;
+    }
+    .stMarkdown, .stText, .stDataFrame, .stTable, .stAlert, .stInfo, .stSuccess, .stWarning, .stError {
+        font-size: 0.98em !important;
+    }
+    /* Responsive plotly charts */
+    .js-plotly-plot, .stPlotlyChart {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: auto !important;
+        max-height: 60vw !important;
+    }
+    /* Make tables scrollable horizontally */
+    .stDataFrame, .stTable {
+        overflow-x: auto !important;
+        display: block !important;
+        max-width: 100vw !important;
+    }
+    /* Reduce button and input size */
+    button, .stButton>button, input, select, textarea {
+        font-size: 1em !important;
+        padding: 0.5em 0.7em !important;
+    }
+    /* Hide Streamlit footer */
+    footer {display: none !important;}
 }
 </style>
 """, unsafe_allow_html=True)
