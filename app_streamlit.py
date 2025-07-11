@@ -1116,14 +1116,9 @@ with tab_overview:
         st.plotly_chart(fig, use_container_width=True, key="main_chart_display", config={
             'displayModeBar': True,
             'displaylogo': False,
-            'modeBarButtonsToRemove': [
-                'zoom2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d',
-                'zoomIn2d', 'zoomOut2d', 'pan2d', 'drawline', 'drawopenpath', 'drawrect', 'drawcircle', 'eraseshape'
-            ],
-            'modeBarButtonsToAdd': [],
+            # No removemos botones, mostramos todos los controles estándar
             'scrollZoom': True,
             'doubleClick': 'reset',
-            'displayModeBar': True
         })
         show_temp_message('success', "✅ Gráfico renderizado exitosamente")
 
