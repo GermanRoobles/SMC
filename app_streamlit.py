@@ -242,6 +242,15 @@ def display_trade_signals(trade_analysis: Dict):
         **Última Actualización:** {datetime.now().strftime('%H:%M:%S')}
         """)
 
+
+# --- Overlays toggles ---
+st.sidebar.markdown("### Overlays a mostrar")
+show_fvg = st.sidebar.checkbox("FVG (Fair Value Gaps)", value=True)
+show_ob = st.sidebar.checkbox("Order Blocks", value=True)
+show_liq = st.sidebar.checkbox("Liquidez", value=True)
+show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
+show_swings = st.sidebar.checkbox("Swings", value=True)
+
 st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
 st.title("📊 Smart Money Concepts - TradingView Style")
 
@@ -706,22 +715,15 @@ with tab_overview:
         "between_sessions": "Entre Sesiones 💤"
     }
 
-    # ➕ Añadir FVGs con renderizado condicional
-    with st.spinner("📊 Añadiendo FVGs..."):
-        fvg_data = signals["fvg"]
-        fvg_count = 0
-
-        if render_full_features:
-            # Versión completa - todos los FVGs con annotations
+    # --- Añadir overlays según toggles ---
+    with st.spinner("📊 Añadiendo overlays..."):
+        # FVG
+        if show_fvg and "fvg" in signals:
+            fvg_data = signals["fvg"]
             for i, row in fvg_data.iterrows():
                 if pd.notna(row["FVG"]):
-                    fvg_count += 1
                     is_bullish = row["FVG"] == 1
-
-                    # Colores TradingView para FVG
                     color = '#2962FF' if is_bullish else '#FF6D00'
-
-                    # Añadir rectángulo FVG
                     fig.add_shape(
                         type="rect",
                         x0=df.iloc[i]["timestamp"],
@@ -732,9 +734,7 @@ with tab_overview:
                         opacity=0.15,
                         line=dict(color=color, width=1, dash="dot")
                     )
-
-                    # Añadir texto identificativo "FVG" solo para algunos
-                    if fvg_count % 3 == 0:
+                    if i % 3 == 0:
                         fig.add_annotation(
                             x=df.iloc[min(i+2, len(df)-1)]["timestamp"],
                             y=(row["Top"] + row["Bottom"]) / 2,
@@ -745,44 +745,124 @@ with tab_overview:
                             bordercolor=color,
                             borderwidth=1
                         )
-
-            show_temp_message('success', f"✅ {fvg_count} FVGs añadidos (completos)")
-        else:
-            # Versión optimizada - todos los FVGs pero sin annotations excesivas
-            for i, row in fvg_data.iterrows():
-                if pd.notna(row["FVG"]):
-                    fvg_count += 1
-                    is_bullish = row["FVG"] == 1
-
-                    # Colores TradingView para FVG
-                    color = '#2962FF' if is_bullish else '#FF6D00'
-
-                    # Añadir rectángulo FVG
+        # Order Blocks
+        if show_ob and "orderblocks" in signals:
+            ob_data = signals["orderblocks"]
+            for i, row in ob_data.iterrows():
+                if pd.notna(row["OB"]):
+                    is_bullish = row["OB"] == 1
+                    color = '#4CAF50' if is_bullish else '#F44336'
                     fig.add_shape(
                         type="rect",
                         x0=df.iloc[i]["timestamp"],
-                        x1=df.iloc[min(i+8, len(df)-1)]["timestamp"],
+                        x1=df.iloc[min(i+12, len(df)-1)]["timestamp"],
                         y0=row["Bottom"],
                         y1=row["Top"],
                         fillcolor=color,
                         opacity=0.2,
-                        line=dict(color=color, width=1)
+                        line=dict(color=color, width=2)
                     )
-
-                    # Añadir texto solo para los FVGs más importantes (cada 10)
-                    if fvg_count % 10 == 0:
+                    fig.add_annotation(
+                        x=df.iloc[min(i+3, len(df)-1)]["timestamp"],
+                        y=(row["Top"] + row["Bottom"]) / 2,
+                        text="OB",
+                        showarrow=False,
+                        font=dict(size=12, color="white", family="Arial Black"),
+                        bgcolor=color,
+                        bordercolor=color,
+                        borderwidth=1
+                    )
+        # BOS/CHoCH
+        if show_bos and "bos_choch" in signals:
+            bos_choch_data = signals["bos_choch"]
+            for i, row in bos_choch_data.iterrows():
+                val = row.get("Signal", row.get("BOS", row.get("CHoCH", None)))
+                if pd.notna(val):
+                    label = "BOS" if "BOS" in str(val) else "CHoCH"
+                    fig.add_shape(
+                        type="line",
+                        x0=df.iloc[i]["timestamp"],
+                        x1=df.iloc[i]["timestamp"],
+                        y0=df.iloc[i]["low"] * 0.999,
+                        y1=df.iloc[i]["high"] * 1.001,
+                        line=dict(color="#9C27B0", width=3, dash="dash")
+                    )
+                    fig.add_annotation(
+                        x=df.iloc[i]["timestamp"],
+                        y=df.iloc[i]["high"] * 1.002,
+                        text=label,
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1,
+                        arrowwidth=2,
+                        arrowcolor="#9C27B0",
+                        font=dict(size=10, color="white", family="Arial Black"),
+                        bgcolor="#9C27B0",
+                        bordercolor="#9C27B0",
+                        borderwidth=1
+                    )
+        # Liquidity
+        if show_liq and "liquidity" in signals:
+            liq_data = signals["liquidity"]
+            if liq_data is not None:
+                for i, row in liq_data.iterrows():
+                    trigger = row.get("Sweep", row.get("Liquidity", None))
+                    if pd.notna(trigger):
+                        price = row.get("Price", row.get("Level", df.iloc[i]["high"]))
+                        fig.add_shape(
+                            type="line",
+                            x0=df.iloc[max(0, i-5)]["timestamp"],
+                            x1=df.iloc[min(i+5, len(df)-1)]["timestamp"],
+                            y0=price,
+                            y1=price,
+                            line=dict(color="#FFD700", width=2, dash="solid")
+                        )
                         fig.add_annotation(
-                            x=df.iloc[min(i+2, len(df)-1)]["timestamp"],
-                            y=(row["Top"] + row["Bottom"]) / 2,
-                            text="FVG",
+                            x=df.iloc[i]["timestamp"],
+                            y=price,
+                            text="LIQ",
                             showarrow=False,
-                            font=dict(size=8, color=color, family="Arial Black"),
-                            bgcolor="rgba(255,255,255,0.6)",
-                            bordercolor=color,
+                            font=dict(size=9, color="black", family="Arial Black"),
+                            bgcolor="#FFD700",
+                            bordercolor="#FFD700",
                             borderwidth=1
                         )
-
-            show_temp_message('success', f"✅ {fvg_count} FVGs añadidos (optimizados)")
+        # Swings
+        if show_swings and "swing_highs_lows" in signals:
+            swing_data = signals.get("swing_highs_lows", None)
+            if swing_data is not None and hasattr(swing_data, 'iterrows'):
+                for i, row in swing_data.iterrows():
+                    highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
+                    if pd.notna(highlow):
+                        score = row["score"] if "score" in row else None
+                        confidence = row["confidence"] if "confidence" in row else None
+                        hovertext = f"Score: {score:.2f}<br>Confianza: {confidence:.2f}" if score is not None or confidence is not None else None
+                        if highlow == 1:  # Swing High
+                            fig.add_trace(go.Scatter(
+                                x=[df.iloc[i]["timestamp"]],
+                                y=[df.iloc[i]["high"]],
+                                mode="markers+text",
+                                marker=dict(color="#FF5722", size=12, symbol="triangle-down", line=dict(color="white", width=1)),
+                                text=["H"],
+                                textposition="middle center",
+                                textfont=dict(color="white", size=8, family="Arial Black"),
+                                name="Swing High",
+                                showlegend=False,
+                                hovertemplate=(hovertext or "Swing High<br>Price: %{y}<br>Time: %{x}<extra></extra>")
+                            ))
+                        elif highlow == -1:  # Swing Low
+                            fig.add_trace(go.Scatter(
+                                x=[df.iloc[i]["timestamp"]],
+                                y=[df.iloc[i]["low"]],
+                                mode="markers+text",
+                                marker=dict(color="#4CAF50", size=12, symbol="triangle-up", line=dict(color="white", width=1)),
+                                text=["L"],
+                                textposition="middle center",
+                                textfont=dict(color="white", size=8, family="Arial Black"),
+                                name="Swing Low",
+                                showlegend=False,
+                                hovertemplate=(hovertext or "Swing Low<br>Price: %{y}<br>Time: %{x}<extra></extra>")
+                            ))
 
     # ➕ Añadir Order Blocks con estilo TradingView y texto identificativo
     ob_data = signals["orderblocks"]
@@ -1000,19 +1080,48 @@ with tab_overview:
     # Información de depuración antes del renderizado
     st.info(f"🎯 Renderizando gráfico con {len(fig.data)} trazas y {len(fig.layout.shapes)} shapes")
 
+
+    # --- Botón de exportar imagen ---
+    st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
+    export_btn = st.button("Descargar gráfico como imagen (PNG)")
+    if export_btn:
+        import io
+        buf = io.BytesIO()
+        fig.write_image(buf, format="png")
+        st.download_button(
+            label="Descargar imagen",
+            data=buf.getvalue(),
+            file_name="smc_chart.png",
+            mime="image/png"
+        )
+
+    # --- Botón centrar en última señal relevante (último overlay) ---
+    center_btn = st.button("Centrar en última señal relevante")
+    if center_btn:
+        last_idx = None
+        for overlay in ["fvg", "orderblocks", "bos_choch", "liquidity", "swing_highs_lows"]:
+            if overlay in signals and hasattr(signals[overlay], 'last_valid_index'):
+                idx = signals[overlay].last_valid_index()
+                if idx is not None:
+                    last_idx = max(last_idx or 0, idx)
+        if last_idx is not None:
+            ts = df.iloc[last_idx]["timestamp"]
+            fig.update_xaxes(range=[ts - pd.Timedelta(minutes=60), ts + pd.Timedelta(minutes=60)])
+            st.info(f"Centrado en la última señal relevante: {ts}")
+        else:
+            st.warning("No se encontró ninguna señal relevante para centrar.")
+
     # Mostrar el gráfico principal
     with st.spinner("🎨 Renderizando gráfico..."):
         st.plotly_chart(fig, use_container_width=True, key="main_chart_display", config={
             'displayModeBar': True,
             'displaylogo': False,
-            # Eliminar completamente la opción de pan y solo dejar zoom y reset
             'modeBarButtonsToRemove': [
                 'zoom2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d',
                 'zoomIn2d', 'zoomOut2d', 'pan2d', 'drawline', 'drawopenpath', 'drawrect', 'drawcircle', 'eraseshape'
             ],
-            # No añadir pan ni otras herramientas
             'modeBarButtonsToAdd': [],
-            'scrollZoom': True,  # Permite zoom con scroll en ejes
+            'scrollZoom': True,
             'doubleClick': 'reset',
             'displayModeBar': True
         })
