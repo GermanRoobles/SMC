@@ -34,6 +34,41 @@ from smc_backtester import SMCBacktester, validate_sl_tp_levels, calculate_adapt
 from dynamic_signal_generator import DynamicSignalGenerator, create_dynamic_test_signals
 
 class ComprehensiveSystemTest:
+    def test_data_integrity_symbol(self, symbol, timeframe, limit=100):
+        """Test de integridad de datos para un símbolo específico (incluye gaps y estructura)."""
+        print(f"\n🔍 TEST INTEGRIDAD DE DATOS PARA {symbol} ({timeframe})")
+        try:
+            df = get_ohlcv(symbol, timeframe, limit=limit)
+            self.log_test(f"Conexión API {symbol}", df is not None and len(df) > 0, f"{len(df)} velas obtenidas")
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_columns if col not in df.columns]
+            self.log_test(f"Estructura de datos {symbol}", len(missing_cols) == 0,
+                         f"Columnas: {list(df.columns)}" if len(missing_cols) == 0 else f"Faltantes: {missing_cols}")
+            null_counts = df.isnull().sum()
+            has_nulls = null_counts.sum() > 0
+            self.log_test(f"Valores nulos {symbol}", not has_nulls,
+                         "Sin valores nulos" if not has_nulls else f"Nulos: {null_counts.to_dict()}")
+            # Consistencia de precios
+            price_errors = 0
+            for i in range(len(df)):
+                row = df.iloc[i]
+                if not (row['low'] <= row['open'] <= row['high'] and row['low'] <= row['close'] <= row['high']):
+                    price_errors += 1
+            self.log_test(f"Consistencia precios {symbol}", price_errors == 0,
+                         f"Todas las velas válidas" if price_errors == 0 else f"{price_errors} velas inválidas")
+            # Gaps temporales
+            df['timestamp_dt'] = pd.to_datetime(df['timestamp'])
+            df_sorted = df.sort_values('timestamp_dt')
+            time_diffs = df_sorted['timestamp_dt'].diff().dt.total_seconds() / 60
+            expected_diff = 15 if timeframe == '15m' else 1
+            gap_threshold = expected_diff * 1.5
+            gaps = time_diffs[time_diffs > gap_threshold]
+            self.log_test(f"Gaps temporales {symbol}", len(gaps) == 0,
+                         f"Sin gaps" if len(gaps) == 0 else f"{len(gaps)} gaps detectados: {gaps.values}")
+            return df
+        except Exception as e:
+            self.log_test(f"Integridad de datos {symbol}", False, f"Error: {str(e)}")
+            return None
     """Test completo del sistema SMC Trading"""
 
     def __init__(self):
@@ -1197,7 +1232,8 @@ class ComprehensiveSystemTest:
                 print(f"⚠️ Error reloading module (restore): {reload_exc}")
 
 def run_comprehensive_test():
-    """Ejecutar test completo del sistema"""
+    # --- PRUEBAS ESPECÍFICAS PARA SÍMBOLOS MULTI-FUENTE ---
+
     print("🎯 INICIANDO TEST COMPLETO DEL SISTEMA SMC TRADING")
     print("="*80)
     print("Este test verificará TODOS los aspectos del sistema:")
@@ -1213,13 +1249,24 @@ def run_comprehensive_test():
 
     tester = ComprehensiveSystemTest()
 
+    # --- PRUEBAS ESPECÍFICAS PARA SÍMBOLOS MULTI-FUENTE ---
+    multi_source_symbols = [
+        ("EURUSD=X", "15m", 192),
+        ("GBPUSD=X", "15m", 192),
+        ("XAUUSD=X", "15m", 192),
+        ("^GSPC", "15m", 192),
+        ("BTCUSDT", "15m", 192),
+        ("ETHUSDT", "15m", 192)
+    ]
+    for symbol, tf, limit in multi_source_symbols:
+        tester.test_data_integrity_symbol(symbol, tf, limit)
+
     try:
         # Ejecutar todos los tests en secuencia
         df = tester.test_data_integrity()
         if df is not None:
             smc_metrics = tester.test_smc_engine(df)
             signals = tester.test_signal_generation(df)
-
 
             # --- NUEVAS PRUEBAS DE INDICADORES SMC Y AVANZADAS ---
             tester.test_smc_indicators_presence(df)

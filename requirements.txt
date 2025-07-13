@@ -6,3 +6,4 @@ smartmoneyconcepts
 ccxt
 scipy
 kaleido
+yfinance

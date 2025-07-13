@@ -36,8 +36,15 @@ def validate_and_fix_chart_data(df):
     if df.empty:
         return df
 
-    # Crear copia para evitar modificar el original
+
+    # Crear copia y resetear el índice para evitar problemas de alineación
     df_fixed = df.copy()
+    # Si columnas es MultiIndex, aplanar
+    if isinstance(df_fixed.columns, pd.MultiIndex):
+        df_fixed.columns = df_fixed.columns.get_level_values(-1)
+    # Si el índice es MultiIndex o tiene nombre, resetear
+    if isinstance(df_fixed.index, pd.MultiIndex) or df_fixed.index.name is not None:
+        df_fixed = df_fixed.reset_index(drop=True)
 
     # Asegurar que timestamp es datetime
     if 'timestamp' in df_fixed.columns:
@@ -51,24 +58,32 @@ def validate_and_fix_chart_data(df):
         st.error(f"❌ Faltan columnas requeridas: {missing_columns}")
         return pd.DataFrame()
 
+    # Si hay columnas requeridas pero alguna es tipo tuple (por error de yfinance), eliminar filas con ese problema
+    for col in ['open', 'high', 'low', 'close']:
+        if col in df_fixed.columns:
+            try:
+                mask = df_fixed[col].apply(lambda x: not isinstance(x, tuple))
+                df_fixed = df_fixed[mask].reset_index(drop=True)
+            except Exception as e:
+                raise
+
     # Eliminar filas con valores NaN en precios
-    df_fixed = df_fixed.dropna(subset=['open', 'high', 'low', 'close'])
+    df_fixed = df_fixed.dropna(subset=['open', 'high', 'low', 'close']).reset_index(drop=True)
 
     # Validar que high >= low
     invalid_rows = df_fixed[df_fixed['high'] < df_fixed['low']]
     if len(invalid_rows) > 0:
         st.warning(f"⚠️ Corrigiendo {len(invalid_rows)} filas con high < low")
-        df_fixed.loc[df_fixed['high'] < df_fixed['low'], 'high'] = df_fixed.loc[df_fixed['high'] < df_fixed['low'], 'low']
+        # Corrige los valores de 'high' donde high < low
+        idxs = df_fixed[df_fixed['high'] < df_fixed['low']].index
+        df_fixed.loc[idxs, 'high'] = df_fixed.loc[idxs, 'low']
 
     # Validar que high >= max(open, close) y low <= min(open, close)
     df_fixed['high'] = df_fixed[['high', 'open', 'close']].max(axis=1)
     df_fixed['low'] = df_fixed[['low', 'open', 'close']].min(axis=1)
 
     # Ordenar por timestamp
-    df_fixed = df_fixed.sort_values('timestamp')
-
-    # Resetear índice
-    df_fixed = df_fixed.reset_index(drop=True)
+    df_fixed = df_fixed.sort_values('timestamp').reset_index(drop=True)
 
     return df_fixed
 
@@ -258,6 +273,7 @@ st.title("📊 Smart Money Concepts - TradingView Style")
 
 # --- CONTROLES SIDEBAR ---
 symbol = st.sidebar.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT"])
+symbol = st.sidebar.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500"])
 timeframe = st.sidebar.selectbox("Timeframe", ["1m", "5m", "15m"])
 data_days = st.sidebar.selectbox("Días de datos", [1, 3, 5, 7, 14, 30], index=2)
 refresh_interval = st.sidebar.selectbox("Intervalo de refresco (seg)", [0, 30, 60, 120], index=0)
@@ -307,11 +323,154 @@ show_future_signals = st.sidebar.checkbox("Mostrar Señales Futuras", value=Fals
 show_historical_charts = st.sidebar.checkbox("Gráficos Históricos", value=False, help="Mostrar gráficos de evolución histórica")
 
 # --- TABS PRINCIPALES ---
-
-# Añadir la pestaña de ejemplo visual didáctico
-tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_ejemplo = st.tabs([
-    "Visión General", "Setups & Confluencias", "Señales y Trading", "Backtesting & Histórico", "Configuración", "Ejemplo Visual"
+# Añadir la pestaña de ejemplo visual didáctico y la nueva pestaña de tiempo real
+tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_ejemplo, tab_realtime = st.tabs([
+    "Visión General", "Setups & Confluencias", "Señales y Trading", "Backtesting & Histórico", "Configuración", "Ejemplo Visual", "Tiempo Real Multi-Chart"
 ])
+
+# --- NUEVA PESTAÑA: TIEMPO REAL MULTI-CHART ---
+with tab_realtime:
+    st.header("🟢 Tiempo Real Multi-Chart (15m)")
+    st.markdown("""
+    Visualiza en tiempo real los indicadores SMC para BTC/USDT, ETH/USDT, EUR/USD y SP500 en timeframe 15m.
+    """)
+    symbols_rt = ["BTC/USDT", "ETH/USDT", "EUR/USD", "SP500"]
+    cols = st.columns(2)
+    for idx, symbol_rt in enumerate(symbols_rt):
+        with cols[idx % 2]:
+            st.subheader(f"{symbol_rt} (15m)")
+            try:
+                df_rt = get_ohlcv_extended(symbol_rt, "15m", days=2)
+                df_rt = validate_and_fix_chart_data(df_rt)
+                if df_rt.empty:
+                    st.warning("No hay datos para este símbolo.")
+                    continue
+                signals_rt = analyze(df_rt)
+                fig_rt = create_optimized_chart(df_rt)
+                # --- Añadir overlays igual que en la pestaña principal ---
+                # FVG
+                if "fvg" in signals_rt:
+                    fvg_data = signals_rt["fvg"]
+                    for i, row in fvg_data.iterrows():
+                        if pd.notna(row["FVG"]):
+                            is_bullish = row["FVG"] == 1
+                            color = '#2962FF' if is_bullish else '#FF6D00'
+                            fig_rt.add_shape(
+                                type="rect",
+                                x0=df_rt.iloc[i]["timestamp"],
+                                x1=df_rt.iloc[min(i+8, len(df_rt)-1)]["timestamp"],
+                                y0=row["Bottom"],
+                                y1=row["Top"],
+                                fillcolor=color,
+                                opacity=0.15,
+                                line=dict(color=color, width=1, dash="dot")
+                            )
+                            if i % 3 == 0:
+                                fig_rt.add_annotation(
+                                    x=df_rt.iloc[min(i+2, len(df_rt)-1)]["timestamp"],
+                                    y=(row["Top"] + row["Bottom"]) / 2,
+                                    text="FVG",
+                                    showarrow=False,
+                                    font=dict(size=10, color=color, family="Arial Black"),
+                                    bgcolor="rgba(255,255,255,0.8)",
+                                    bordercolor=color,
+                                    borderwidth=1
+                                )
+                # Order Blocks
+                if "orderblocks" in signals_rt:
+                    ob_data = signals_rt["orderblocks"]
+                    for i, row in ob_data.iterrows():
+                        if pd.notna(row["OB"]):
+                            is_bullish = row["OB"] == 1
+                            color = '#4CAF50' if is_bullish else '#F44336'
+                            fig_rt.add_shape(
+                                type="rect",
+                                x0=df_rt.iloc[i]["timestamp"],
+                                x1=df_rt.iloc[min(i+12, len(df_rt)-1)]["timestamp"],
+                                y0=row["Bottom"],
+                                y1=row["Top"],
+                                fillcolor=color,
+                                opacity=0.2,
+                                line=dict(color=color, width=2)
+                            )
+                            fig_rt.add_annotation(
+                                x=df_rt.iloc[min(i+3, len(df_rt)-1)]["timestamp"],
+                                y=(row["Top"] + row["Bottom"]) / 2,
+                                text="OB",
+                                showarrow=False,
+                                font=dict(size=12, color="white", family="Arial Black"),
+                                bgcolor=color,
+                                bordercolor=color,
+                                borderwidth=1
+                            )
+                # BOS/CHoCH
+                if "bos_choch" in signals_rt:
+                    bos_choch_data = signals_rt["bos_choch"]
+                    for i, row in bos_choch_data.iterrows():
+                        val = row.get("Signal", row.get("BOS", row.get("CHoCH", None)))
+                        if pd.notna(val):
+                            label = "BOS" if "BOS" in str(val) else "CHoCH"
+                            fig_rt.add_shape(
+                                type="line",
+                                x0=df_rt.iloc[i]["timestamp"],
+                                x1=df_rt.iloc[i]["timestamp"],
+                                y0=df_rt.iloc[i]["low"] * 0.999,
+                                y1=df_rt.iloc[i]["high"] * 1.001,
+                                line=dict(color="#9C27B0", width=3, dash="dash")
+                            )
+                            fig_rt.add_annotation(
+                                x=df_rt.iloc[i]["timestamp"],
+                                y=df_rt.iloc[i]["high"] * 1.002,
+                                text=label,
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=2,
+                                arrowcolor="#9C27B0",
+                                font=dict(size=10, color="white", family="Arial Black"),
+                                bgcolor="#9C27B0",
+                                bordercolor="#9C27B0",
+                                borderwidth=1
+                            )
+                # Liquidity
+                if "liquidity" in signals_rt:
+                    liq_data = signals_rt["liquidity"]
+                    if liq_data is not None:
+                        for i, row in liq_data.iterrows():
+                            trigger = row.get("Sweep", row.get("Liquidity", None))
+                            if pd.notna(trigger):
+                                price = row.get("Price", row.get("Level", df_rt.iloc[i]["high"]))
+                                fig_rt.add_shape(
+                                    type="line",
+                                    x0=df_rt.iloc[max(0, i-5)]["timestamp"],
+                                    x1=df_rt.iloc[min(i+5, len(df_rt)-1)]["timestamp"],
+                                    y0=price,
+                                    y1=price,
+                                    line=dict(color="#FFD700", width=2, dash="solid")
+                                )
+                # Swings
+                if "swing_highs_lows" in signals_rt:
+                    swing_data = signals_rt.get("swing_highs_lows", None)
+                    if swing_data is not None and hasattr(swing_data, 'iterrows'):
+                        for i, row in swing_data.iterrows():
+                            highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
+                            if pd.notna(highlow):
+                                # Puedes personalizar el color/forma según tipo de swing
+                                color = "#00BFFF" if highlow == "high" else "#FF8C00"
+                                fig_rt.add_shape(
+                                    type="circle",
+                                    xref="x", yref="y",
+                                    x0=df_rt.iloc[i]["timestamp"],
+                                    x1=df_rt.iloc[i]["timestamp"],
+                                    y0=df_rt.iloc[i]["high"] * 1.001 if highlow == "high" else df_rt.iloc[i]["low"] * 0.999,
+                                    y1=df_rt.iloc[i]["high"] * 1.002 if highlow == "high" else df_rt.iloc[i]["low"] * 0.998,
+                                    line=dict(color=color, width=2),
+                                    fillcolor=color,
+                                    opacity=0.5
+                                )
+                st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
+            except Exception as e:
+                st.error(f"Error en {symbol_rt}: {e}")
 # --- EJEMPLO VISUAL DIDÁCTICO ---
 with tab_ejemplo:
     st.header("Ejemplo Visual Didáctico: Estrategia SMC Simplified by TJR (LONG y SHORT)")
@@ -1192,7 +1351,7 @@ with tab_setups:
     )
     # Controles de periodo y timeframe
     st.markdown("#### Parámetros de histórico")
-    symbol_hist = st.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT"], key="symbol_hist")
+    symbol_hist = st.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500"], key="symbol_hist")
     timeframe_hist = st.selectbox("Timeframe", ["1m", "5m", "15m", "1h", "4h"], key="tf_hist")
     period_hist = st.selectbox(
         "Período Histórico",

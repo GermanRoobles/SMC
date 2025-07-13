@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "shell",
+      "label": "Run Streamlit app for multi-source OHLCV validation",
+      "command": "streamlit run app_streamlit.py",
+      "group": "test",
+      "isBackground": false
+    }
+  ]
+}
