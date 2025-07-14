@@ -259,86 +259,97 @@ def display_trade_signals(trade_analysis: Dict):
 
 
 # --- Overlays toggles ---
+#############################
 
 st.sidebar.markdown("### Overlays a mostrar")
+st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
+st.title("📊 Smart Money Concepts - TradingView Style")
+
+
+# --- SIDEBAR CONTROLS (ENGLISH) ---
+st.sidebar.markdown("### Overlays to show")
 show_fvg = st.sidebar.checkbox("FVG (Fair Value Gaps)", value=True)
 show_ob = st.sidebar.checkbox("Order Blocks", value=True)
-show_liq = st.sidebar.checkbox("Liquidez", value=True)
+show_liq = st.sidebar.checkbox("Liquidity", value=True)
 show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
 show_swings = st.sidebar.checkbox("Swings", value=True)
-# --- NUEVOS CONTROLES HTF ---
-st.sidebar.markdown("### HTF Overlays & Alertas")
-show_htf_zones = st.sidebar.checkbox("Mostrar FVGs/OBs HTF (Weekly/Monthly) en 4H", value=False)
-enable_htf_alerts = st.sidebar.checkbox("Alertas HTF (FVG/OB/SFP)", value=False)
-htf_timeframes = st.sidebar.multiselect("HTF para overlays", ["1w", "1M"], default=["1w"])
+# --- HTF CONTROLS ---
+st.sidebar.markdown("### HTF Overlays & Alerts")
+show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
+enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
+htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
 
 st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
 st.title("📊 Smart Money Concepts - TradingView Style")
 
-# --- SIDEBAR CONTROLS ---
-
-# --- CONTROLES SIDEBAR ---
-symbol = st.sidebar.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT"])
-symbol = st.sidebar.selectbox("Símbolo", ["BTC/USDT", "ETH/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500"])
-timeframe = st.sidebar.selectbox("Timeframe", ["1m", "5m", "15m"])
-data_days = st.sidebar.selectbox("Días de datos", [1, 3, 5, 7, 14, 30], index=2)
-refresh_interval = st.sidebar.selectbox("Intervalo de refresco (seg)", [0, 30, 60, 120], index=0)
-bot_enabled = st.sidebar.checkbox("Habilitar SMC Bot", value=True)
-show_signals = st.sidebar.checkbox("Mostrar Señales", value=True)
-show_bot_metrics = st.sidebar.checkbox("Mostrar Métricas", value=True)
-trade_engine_enabled = st.sidebar.checkbox("Habilitar Motor de Trading", value=False)
-# --- CONTEXTO HTF ---
-htf_enabled = st.sidebar.checkbox("Usar contexto HTF", value=False, help="Filtrar señales según contexto de marco temporal superior")
-htf_timeframe = st.sidebar.selectbox("HTF Timeframe", ["1h", "4h", "1d"], index=0, help="Marco temporal superior para contexto HTF") if htf_enabled else None
+symbol = st.sidebar.selectbox("Symbol", ["BTC/USDT", "ETH/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500"])
+timeframe = st.sidebar.selectbox(
+    "Timeframe",
+    ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
+    index=2
+)
+# Data range up to 365 days (1 year)
+data_days = st.sidebar.selectbox(
+    "Data days",
+    [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
+    index=5
+)
+refresh_interval = st.sidebar.selectbox("Refresh interval (sec)", [0, 30, 60, 120], index=0)
+bot_enabled = st.sidebar.checkbox("Enable SMC Bot", value=True)
+show_signals = st.sidebar.checkbox("Show Signals", value=True)
+show_bot_metrics = st.sidebar.checkbox("Show Metrics", value=True)
+trade_engine_enabled = st.sidebar.checkbox("Enable Trading Engine", value=False)
+# --- HTF CONTEXT ---
+htf_enabled = st.sidebar.checkbox("Use HTF context", value=False, help="Filter signals according to higher timeframe context")
+htf_timeframe = st.sidebar.selectbox("HTF Timeframe", ["1h", "2h", "4h", "1d", "1w", "1M"], index=2, help="Higher timeframe for HTF context") if htf_enabled else None
 if trade_engine_enabled:
-    min_risk_reward = st.sidebar.slider("Risk/Reward Mínimo", 1.5, 5.0, 2.0, 0.5)
-    max_risk_percent = st.sidebar.slider("Riesgo Máximo (%)", 0.5, 5.0, 1.0, 0.5)
-    show_trade_signals = st.sidebar.checkbox("Mostrar Señales de Trading", value=True)
-    show_trade_stats = st.sidebar.checkbox("Estadísticas de Trading", value=True)
-backtesting_enabled = st.sidebar.checkbox("Habilitar Backtesting", value=False)
+    min_risk_reward = st.sidebar.slider("Minimum Risk/Reward", 1.5, 5.0, 2.0, 0.5)
+    max_risk_percent = st.sidebar.slider("Maximum Risk (%)", 0.5, 5.0, 1.0, 0.5)
+    show_trade_signals = st.sidebar.checkbox("Show Trading Signals", value=True)
+    show_trade_stats = st.sidebar.checkbox("Show Trading Stats", value=True)
+backtesting_enabled = st.sidebar.checkbox("Enable Backtesting", value=False)
 if backtesting_enabled:
-    initial_capital = st.sidebar.number_input("Capital Inicial ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
-    risk_per_trade = st.sidebar.slider("Riesgo por Trade (%)", 0.5, 5.0, 1.0, 0.5)
-    show_backtest_chart = st.sidebar.checkbox("Mostrar Gráfico de Performance", value=True)
-    show_backtest_report = st.sidebar.checkbox("Mostrar Reporte Detallado", value=True)
+    initial_capital = st.sidebar.number_input("Initial Capital ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
+    risk_per_trade = st.sidebar.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
+    show_backtest_chart = st.sidebar.checkbox("Show Performance Chart", value=True)
+    show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
 
-# --- CONTROL PARA OPEN INTEREST ---
-show_open_interest = st.sidebar.checkbox("Mostrar Open Interest (Binance Futures)", value=False, help="Overlay de interés abierto real sobre el gráfico principal.")
+# --- OPEN INTEREST CONTROL ---
+show_open_interest = st.sidebar.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
 
-# Configuración histórica
+# Historical configuration
 st.sidebar.markdown("### 📅 Historical Analysis")
-enable_historical = st.sidebar.checkbox("Habilitar Análisis Histórico", value=False, help="Navegar por el histórico del par")
+enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
 historical_period = st.sidebar.selectbox(
-    "Período Histórico",
+    "Historical Period",
     options=[
-        ("1 Hora", HistoricalPeriod.HOUR_1),
-        ("4 Horas", HistoricalPeriod.HOURS_4),
-        ("12 Horas", HistoricalPeriod.HOURS_12),
-        ("1 Día", HistoricalPeriod.DAY_1),
-        ("3 Días", HistoricalPeriod.DAYS_3),
-        ("1 Semana", HistoricalPeriod.WEEK_1),
-        ("2 Semanas", HistoricalPeriod.WEEKS_2),
-        ("1 Mes", HistoricalPeriod.MONTH_1)
+        ("1 Hour", HistoricalPeriod.HOUR_1),
+        ("4 Hours", HistoricalPeriod.HOURS_4),
+        ("12 Hours", HistoricalPeriod.HOURS_12),
+        ("1 Day", HistoricalPeriod.DAY_1),
+        ("3 Days", HistoricalPeriod.DAYS_3),
+        ("1 Week", HistoricalPeriod.WEEK_1),
+        ("2 Weeks", HistoricalPeriod.WEEKS_2),
+        ("1 Month", HistoricalPeriod.MONTH_1)
     ],
     format_func=lambda x: x[0],
-    index=3,  # Default: 1 Día
-    help="Período histórico para el análisis"
+    index=3,  # Default: 1 Day
+    help="Historical period for analysis"
 )
 
-show_future_signals = st.sidebar.checkbox("Mostrar Señales Futuras", value=False, help="Preview de señales futuras (solo en modo histórico)")
-show_historical_charts = st.sidebar.checkbox("Gráficos Históricos", value=False, help="Mostrar gráficos de evolución histórica")
+show_future_signals = st.sidebar.checkbox("Show Future Signals", value=False, help="Preview of future signals (only in historical mode)")
+show_historical_charts = st.sidebar.checkbox("Historical Charts", value=False, help="Show historical evolution charts")
 
-# --- TABS PRINCIPALES ---
-# Añadir la pestaña de ejemplo visual didáctico y la nueva pestaña de tiempo real
-tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_ejemplo, tab_realtime = st.tabs([
-    "Visión General", "Setups & Confluencias", "Señales y Trading", "Backtesting & Histórico", "Configuración", "Ejemplo Visual", "Tiempo Real Multi-Chart"
+# --- MAIN TABS (ENGLISH) ---
+tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, tab_realtime = st.tabs([
+    "Market Overview", "Setups & Confluences", "Signals & Trading", "Backtesting & History", "Configuration", "Visual Example", "Real-Time Multi-Chart"
 ])
 
 # --- NUEVA PESTAÑA: TIEMPO REAL MULTI-CHART ---
 with tab_realtime:
-    st.header("🟢 Tiempo Real Multi-Chart (15m)")
+    st.header("🟢 Real-Time Multi-Chart (15m)")
     st.markdown("""
-    Visualiza en tiempo real los indicadores SMC para BTC/USDT, ETH/USDT, EUR/USD y SP500 en timeframe 15m.
+    View SMC indicators in real time for BTC/USDT, ETH/USDT, EUR/USD, and SP500 on the 15m timeframe.
     """)
     symbols_rt = ["BTC/USDT", "ETH/USDT", "EUR/USD", "SP500"]
     cols = st.columns(2)
@@ -352,7 +363,7 @@ with tab_realtime:
                 df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
                 df_rt = validate_and_fix_chart_data(df_rt)
                 if df_rt.empty:
-                    st.warning("No hay datos para este símbolo.")
+                    st.warning("No data available for this symbol.")
                     continue
                 signals_rt = analyze(df_rt)
                 fig_rt = create_optimized_chart(df_rt)
@@ -479,12 +490,11 @@ with tab_realtime:
                                 )
                 st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
             except Exception as e:
-                st.error(f"Error en {symbol_rt}: {e}")
-# --- EJEMPLO VISUAL DIDÁCTICO ---
-with tab_ejemplo:
-    st.header("Ejemplo Visual Didáctico: Estrategia SMC Simplified by TJR (LONG y SHORT)")
+                st.error(f"Error in {symbol_rt}: {e}")
+with tab_example:
+    st.header("Visual Example: SMC Simplified by TJR Strategy (LONG and SHORT)")
     st.markdown("""
-    Ejemplos paso a paso de una señal LONG y una señal SHORT según la metodología SMC Simplified by TJR. Cada gráfico muestra: zona de liquidez, sweep, FVG, Order Block, CHoCH, señal, SL y TP.
+    Step-by-step examples of a LONG and SHORT signal according to the SMC Simplified by TJR methodology. Each chart shows: liquidity zone, sweep, FVG, Order Block, CHoCH, signal, SL, and TP.
     """)
 
     import plotly.graph_objects as go
@@ -494,9 +504,9 @@ with tab_ejemplo:
 
     col_long, col_short = st.columns(2)
 
-    # --- Ejemplo LONG ---
+    # --- LONG Example ---
     with col_long:
-        st.subheader("Señal LONG (Compra)")
+        st.subheader("LONG Signal (Buy)")
         scenario_long = {
             'symbol': 'EXAMPLE/USDT',
             'timeframe': '15m',
@@ -559,9 +569,9 @@ with tab_ejemplo:
         fig_long = go.Figure()
         fig_long.add_trace(go.Candlestick(
             x=df_long['timestamp'], open=df_long['open'], high=df_long['high'], low=df_long['low'], close=df_long['close'], name='Precio'))
-        # Zona de liquidez (equal lows)
+        # Liquidity zone (equal lows)
         fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'][8], y0=scenario_long['liquidity_zone']['price'], y1=scenario_long['liquidity_zone']['price'], line=dict(color="#FFD700", width=2, dash="dot"))
-        fig_long.add_annotation(x=df_long['timestamp'][2], y=scenario_long['liquidity_zone']['price']+0.0002, text="Equal Lows (Liquidez)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        fig_long.add_annotation(x=df_long['timestamp'][2], y=scenario_long['liquidity_zone']['price']+0.0002, text="Equal Lows (Liquidity)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
         # Sweep
         fig_long.add_shape(type="line", x0=df_long['timestamp'][5], x1=df_long['timestamp'][5], y0=scenario_long['liquidity_zone']['price'], y1=scenario_long['sweep']['low'], line=dict(color="#F44336", width=2, dash="dash"))
         fig_long.add_annotation(x=df_long['timestamp'][5], y=scenario_long['sweep']['low']-0.0002, text="Sweep", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
@@ -574,22 +584,22 @@ with tab_ejemplo:
         # CHoCH
         fig_long.add_shape(type="line", x0=df_long['timestamp'][13], x1=df_long['timestamp'][13], y0=scenario_long['order_block']['low'], y1=scenario_long['order_block']['high'], line=dict(color="#9C27B0", width=2, dash="dash"))
         fig_long.add_annotation(x=df_long['timestamp'][13], y=scenario_long['order_block']['high']+0.0005, text="CHoCH", showarrow=True, arrowhead=2, font=dict(color="#9C27B0"), bgcolor="#232323")
-        # Entrada, SL, TP
+        # Entry, SL, TP
         fig_long.add_shape(type="line", x0=df_long['timestamp'][13], x1=df_long['timestamp'][13], y0=scenario_long['sl'], y1=scenario_long['entry'], line=dict(color="#26A69A", width=3, dash="dot"))
-        fig_long.add_annotation(x=df_long['timestamp'][13], y=scenario_long['entry']+0.0003, text="Entrada LONG", showarrow=True, arrowhead=2, font=dict(color="#26A69A"), bgcolor="#232323")
+        fig_long.add_annotation(x=df_long['timestamp'][13], y=scenario_long['entry']+0.0003, text="LONG Entry", showarrow=True, arrowhead=2, font=dict(color="#26A69A"), bgcolor="#232323")
         fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'].iloc[-1], y0=scenario_long['sl'], y1=scenario_long['sl'], line=dict(color="#EF5350", width=2, dash="dash"))
         fig_long.add_annotation(x=df_long['timestamp'][2], y=scenario_long['sl']-0.0002, text="Stop Loss", showarrow=False, font=dict(color="#EF5350"), bgcolor="#232323")
         fig_long.add_shape(type="line", x0=df_long['timestamp'][0], x1=df_long['timestamp'].iloc[-1], y0=scenario_long['tp'], y1=scenario_long['tp'], line=dict(color="#FFD700", width=2, dash="dash"))
         fig_long.add_annotation(x=df_long['timestamp'][20], y=scenario_long['tp']+0.0002, text="Take Profit", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
-        # Resultado
+        # Result
         fig_long.add_annotation(x=df_long['timestamp'][21], y=scenario_long['tp']+0.0005, text=scenario_long['result'], showarrow=False, font=dict(color="#26A69A", size=14, family="Arial Black"), bgcolor="#232323")
-        fig_long.update_layout(title="Ejemplo LONG SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Tiempo", color="#fff"), yaxis=dict(title="Precio", color="#fff"))
+        fig_long.update_layout(title="LONG Example SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Time", color="#fff"), yaxis=dict(title="Price", color="#fff"))
         st.plotly_chart(fig_long, use_container_width=True)
-        st.info(f"**Estructura:** {scenario_long['structure']} | **Entrada:** {scenario_long['entry']} | **SL:** {scenario_long['sl']} | **TP:** {scenario_long['tp']} | {scenario_long['result']}")
+        st.info(f"**Structure:** {scenario_long['structure']} | **Entry:** {scenario_long['entry']} | **SL:** {scenario_long['sl']} | **TP:** {scenario_long['tp']} | {scenario_long['result']}")
 
-    # --- Ejemplo SHORT ---
+    # --- SHORT Example ---
     with col_short:
-        st.subheader("Señal SHORT (Venta)")
+        st.subheader("SHORT Signal (Sell)")
         scenario_short = {
             'symbol': 'EXAMPLE/USDT',
             'timeframe': '15m',
@@ -649,9 +659,9 @@ with tab_ejemplo:
         fig_short = go.Figure()
         fig_short.add_trace(go.Candlestick(
             x=df_short['timestamp'], open=df_short['open'], high=df_short['high'], low=df_short['low'], close=df_short['close'], name='Precio'))
-        # Zona de liquidez (equal highs)
+        # Liquidity zone (equal highs)
         fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'][8], y0=scenario_short['liquidity_zone']['price'], y1=scenario_short['liquidity_zone']['price'], line=dict(color="#FFD700", width=2, dash="dot"))
-        fig_short.add_annotation(x=df_short['timestamp'][2], y=scenario_short['liquidity_zone']['price']+0.0002, text="Equal Highs (Liquidez)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
+        fig_short.add_annotation(x=df_short['timestamp'][2], y=scenario_short['liquidity_zone']['price']+0.0002, text="Equal Highs (Liquidity)", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
         # Sweep
         fig_short.add_shape(type="line", x0=df_short['timestamp'][5], x1=df_short['timestamp'][5], y0=scenario_short['liquidity_zone']['price'], y1=scenario_short['sweep']['high'], line=dict(color="#F44336", width=2, dash="dash"))
         fig_short.add_annotation(x=df_short['timestamp'][5], y=scenario_short['sweep']['high']+0.0002, text="Sweep", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
@@ -664,18 +674,18 @@ with tab_ejemplo:
         # CHoCH
         fig_short.add_shape(type="line", x0=df_short['timestamp'][13], x1=df_short['timestamp'][13], y0=scenario_short['order_block']['low'], y1=scenario_short['order_block']['high'], line=dict(color="#9C27B0", width=2, dash="dash"))
         fig_short.add_annotation(x=df_short['timestamp'][13], y=scenario_short['order_block']['high']+0.0005, text="CHoCH", showarrow=True, arrowhead=2, font=dict(color="#9C27B0"), bgcolor="#232323")
-        # Entrada, SL, TP
+        # Entry, SL, TP
         fig_short.add_shape(type="line", x0=df_short['timestamp'][13], x1=df_short['timestamp'][13], y0=scenario_short['entry'], y1=scenario_short['sl'], line=dict(color="#F44336", width=3, dash="dot"))
-        fig_short.add_annotation(x=df_short['timestamp'][13], y=scenario_short['entry']-0.0003, text="Entrada SHORT", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
+        fig_short.add_annotation(x=df_short['timestamp'][13], y=scenario_short['entry']-0.0003, text="SHORT Entry", showarrow=True, arrowhead=2, font=dict(color="#F44336"), bgcolor="#232323")
         fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'].iloc[-1], y0=scenario_short['sl'], y1=scenario_short['sl'], line=dict(color="#EF5350", width=2, dash="dash"))
         fig_short.add_annotation(x=df_short['timestamp'][2], y=scenario_short['sl']+0.0002, text="Stop Loss", showarrow=False, font=dict(color="#EF5350"), bgcolor="#232323")
         fig_short.add_shape(type="line", x0=df_short['timestamp'][0], x1=df_short['timestamp'].iloc[-1], y0=scenario_short['tp'], y1=scenario_short['tp'], line=dict(color="#FFD700", width=2, dash="dash"))
         fig_short.add_annotation(x=df_short['timestamp'][20], y=scenario_short['tp']-0.0002, text="Take Profit", showarrow=False, font=dict(color="#FFD700"), bgcolor="#232323")
-        # Resultado
+        # Result
         fig_short.add_annotation(x=df_short['timestamp'][21], y=scenario_short['tp']-0.0005, text=scenario_short['result'], showarrow=False, font=dict(color="#F44336", size=14, family="Arial Black"), bgcolor="#232323")
-        fig_short.update_layout(title="Ejemplo SHORT SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Tiempo", color="#fff"), yaxis=dict(title="Precio", color="#fff"))
+        fig_short.update_layout(title="SHORT Example SMC-TJR", height=480, paper_bgcolor="#232323", plot_bgcolor="#232323", xaxis=dict(title="Time", color="#fff"), yaxis=dict(title="Price", color="#fff"))
         st.plotly_chart(fig_short, use_container_width=True)
-        st.info(f"**Estructura:** {scenario_short['structure']} | **Entrada:** {scenario_short['entry']} | **SL:** {scenario_short['sl']} | **TP:** {scenario_short['tp']} | {scenario_short['result']}")
+        st.info(f"**Structure:** {scenario_short['structure']} | **Entry:** {scenario_short['entry']} | **SL:** {scenario_short['sl']} | **TP:** {scenario_short['tp']} | {scenario_short['result']}")
 
 # --- VISIÓN GENERAL ---
 with tab_overview:
@@ -1333,25 +1343,25 @@ with tab_overview:
     )
 
     # Información de depuración antes del renderizado
-    st.info(f"🎯 Renderizando gráfico con {len(fig.data)} trazas y {len(fig.layout.shapes)} shapes")
+    st.info(f"🎯 Rendering chart with {len(fig.data)} traces and {len(fig.layout.shapes)} shapes")
 
 
-    # --- Botón de exportar imagen ---
+    # --- Export image button ---
     st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
-    export_btn = st.button("Descargar gráfico como imagen (PNG)")
+    export_btn = st.button("Download chart as image (PNG)")
     if export_btn:
         import io
         buf = io.BytesIO()
         fig.write_image(buf, format="png")
         st.download_button(
-            label="Descargar imagen",
+            label="Download image",
             data=buf.getvalue(),
             file_name="smc_chart.png",
             mime="image/png"
         )
 
-    # --- Botón centrar en última señal relevante (último overlay) ---
-    center_btn = st.button("Centrar en última señal relevante")
+    # --- Center on last relevant signal button ---
+    center_btn = st.button("Center on last relevant signal")
     if center_btn:
         last_idx = None
         for overlay in ["fvg", "orderblocks", "bos_choch", "liquidity", "swing_highs_lows"]:
@@ -1362,20 +1372,20 @@ with tab_overview:
         if last_idx is not None:
             ts = df.iloc[last_idx]["timestamp"]
             fig.update_xaxes(range=[ts - pd.Timedelta(minutes=60), ts + pd.Timedelta(minutes=60)])
-            st.info(f"Centrado en la última señal relevante: {ts}")
+            st.info(f"Centered on last relevant signal: {ts}")
         else:
-            st.warning("No se encontró ninguna señal relevante para centrar.")
+            st.warning("No relevant signal found to center.")
 
-    # Mostrar el gráfico principal
-    with st.spinner("🎨 Renderizando gráfico..."):
+    # Show main chart
+    with st.spinner("🎨 Rendering chart..."):
         st.plotly_chart(fig, use_container_width=True, key="main_chart_display", config={
             'displayModeBar': True,
             'displaylogo': False,
-            # No removemos botones, mostramos todos los controles estándar
+            # Show all standard controls
             'scrollZoom': True,
             'doubleClick': 'reset',
         })
-        show_temp_message('success', "✅ Gráfico renderizado exitosamente")
+        show_temp_message('success', "✅ Chart rendered successfully")
 
 
 # --- SETUPS & CONFLUENCIAS ---
@@ -1837,101 +1847,101 @@ if bot_enabled and bot_analysis:
 
 # ➕ Mostrar gráficos históricos si están habilitados
 if enable_historical and show_historical_charts and 'historical_visualizer' in st.session_state:
-    st.markdown("## 📈 Análisis Histórico Avanzado")
+    st.markdown("## 📈 Advanced Historical Analysis")
 
-    # Crear tabs para diferentes gráficos
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Evolución Señales", "💰 Risk:Reward", "🎯 Confianza", "🏦 Mercado"])
+    # Create tabs for different charts
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Signal Evolution", "💰 Risk:Reward", "🎯 Confidence", "🏦 Market"])
 
     with tab1:
-        st.markdown("### 📊 Evolución de Señales en el Tiempo")
+        st.markdown("### 📊 Signal Evolution Over Time")
         try:
             evolution_chart = st.session_state.historical_visualizer.create_historical_evolution_chart()
             if evolution_chart and evolution_chart.data:
                 st.plotly_chart(evolution_chart, use_container_width=True, key="evolution_chart")
             else:
-                st.info("📊 No hay datos suficientes para mostrar evolución de señales")
+                st.info("📊 Not enough data to show signal evolution")
         except Exception as e:
-            st.error(f"Error creando gráfico de evolución: {e}")
+            st.error(f"Error creating evolution chart: {e}")
 
     with tab2:
-        st.markdown("### 💰 Evolución Risk:Reward")
+        st.markdown("### 💰 Risk:Reward Evolution")
         try:
             rr_chart = st.session_state.historical_visualizer.create_rr_evolution_chart()
             if rr_chart and rr_chart.data:
                 st.plotly_chart(rr_chart, use_container_width=True, key="rr_chart")
             else:
-                st.info("💰 No hay datos suficientes para mostrar evolución R:R")
+                st.info("💰 Not enough data to show R:R evolution")
         except Exception as e:
-            st.error(f"Error creando gráfico R:R: {e}")
+            st.error(f"Error creating R:R chart: {e}")
 
     with tab3:
-        st.markdown("### 🎯 Evolución de Confianza")
+        st.markdown("### 🎯 Confidence Evolution")
         try:
             confidence_chart = st.session_state.historical_visualizer.create_confidence_evolution_chart()
             if confidence_chart and confidence_chart.data:
                 st.plotly_chart(confidence_chart, use_container_width=True, key="confidence_chart")
             else:
-                st.info("🎯 No hay datos suficientes para mostrar evolución de confianza")
+                st.info("🎯 Not enough data to show confidence evolution")
         except Exception as e:
-            st.error(f"Error creando gráfico de confianza: {e}")
+            st.error(f"Error creating confidence chart: {e}")
 
     with tab4:
-        st.markdown("### 🏦 Condiciones del Mercado")
+        st.markdown("### 🏦 Market Conditions")
         try:
             market_chart = st.session_state.historical_visualizer.create_market_conditions_chart()
             if market_chart and market_chart.data:
                 st.plotly_chart(market_chart, use_container_width=True, key="market_chart")
             else:
-                st.info("🏦 No hay datos suficientes para mostrar condiciones del mercado")
+                st.info("🏦 Not enough data to show market conditions")
         except Exception as e:
-            st.error(f"Error creando gráfico de mercado: {e}")
+            st.error(f"Error creating market chart: {e}")
 
-    # Mostrar análisis de rendimiento histórico
+    # Show detailed historical performance analysis
     if st.session_state.historical_manager.snapshots:
-        st.markdown("### 📋 Análisis de Rendimiento Histórico Detallado")
+        st.markdown("### 📋 Detailed Historical Performance Analysis")
 
-        # Obtener estadísticas detalladas
+        # Get detailed statistics
         stats = st.session_state.historical_manager.get_signal_statistics()
 
         if stats:
-            # Métricas principales
+            # Main metrics
             col1, col2, col3, col4, col5 = st.columns(5)
 
             with col1:
-                st.metric("📊 Total Señales", stats['total_signals'])
+                st.metric("📊 Total Signals", stats['total_signals'])
 
             with col2:
-                st.metric("🟢 Señales BUY", stats['buy_signals'])
+                st.metric("🟢 BUY Signals", stats['buy_signals'])
 
             with col3:
-                st.metric("🔴 Señales SELL", stats['sell_signals'])
+                st.metric("🔴 SELL Signals", stats['sell_signals'])
 
             with col4:
-                st.metric("💎 R:R Promedio", f"{stats['avg_rr']:.2f}:1")
+                st.metric("💎 Avg R:R", f"{stats['avg_rr']:.2f}:1")
 
             with col5:
-                st.metric("🎯 Confianza Media", f"{stats['avg_confidence']:.1%}")
+                st.metric("🎯 Avg Confidence", f"{stats['avg_confidence']:.1%}")
 
-            # Información adicional en tabs
-            tab1, tab2, tab3 = st.tabs(["📈 Estadísticas", "⏰ Período", "🔍 Detalles"])
+            # Additional info in tabs
+            tab1, tab2, tab3 = st.tabs(["📈 Statistics", "⏰ Period", "🔍 Details"])
 
             with tab1:
                 col1, col2 = st.columns(2)
 
                 with col1:
                     st.info(f"""
-                    **🎯 Calidad de Señales:**
+                    **🎯 Signal Quality:**
                     - Total snapshots: {stats['snapshots_count']}
-                    - Señales por snapshot: {stats['total_signals']/max(stats['snapshots_count'], 1):.1f}
-                    - Ratio BUY/SELL: {stats['buy_signals']/max(stats['sell_signals'], 1):.2f}
+                    - Signals per snapshot: {stats['total_signals']/max(stats['snapshots_count'], 1):.1f}
+                    - BUY/SELL Ratio: {stats['buy_signals']/max(stats['sell_signals'], 1):.2f}
                     """)
 
                 with col2:
                     st.info(f"""
-                    **💰 Métricas de Riesgo:**
-                    - R:R Promedio: {stats['avg_rr']:.2f}:1
-                    - Confianza Media: {stats['avg_confidence']:.1%}
-                    - Señales BUY: {stats['buy_signals']/max(stats['total_signals'], 1):.1%}
+                    **💰 Risk Metrics:**
+                    - Avg R:R: {stats['avg_rr']:.2f}:1
+                    - Avg Confidence: {stats['avg_confidence']:.1%}
+                    - BUY Signals: {stats['buy_signals']/max(stats['total_signals'], 1):.1%}
                     """)
 
             with tab2:
@@ -1939,32 +1949,32 @@ if enable_historical and show_historical_charts and 'historical_visualizer' in s
                 hours = duration.total_seconds() / 3600
 
                 st.info(f"""
-                **⏱️ Período Analizado:**
-                - Inicio: {stats['timespan']['start'].strftime('%Y-%m-%d %H:%M:%S')}
-                - Fin: {stats['timespan']['end'].strftime('%Y-%m-%d %H:%M:%S')}
-                - Duración: {str(duration).split('.')[0]}
-                - Horas totales: {hours:.1f}h
+                **⏱️ Analyzed Period:**
+                - Start: {stats['timespan']['start'].strftime('%Y-%m-%d %H:%M:%S')}
+                - End: {stats['timespan']['end'].strftime('%Y-%m-%d %H:%M:%S')}
+                - Duration: {str(duration).split('.')[0]}
+                - Total hours: {hours:.1f}h
                 """)
 
             with tab3:
                 st.info(f"""
-                **🔍 Análisis Detallado:**
-                - Símbolo: {symbol}
+                **🔍 Detailed Analysis:**
+                - Symbol: {symbol}
                 - Timeframe: {timeframe}
-                - Período histórico: {historical_period[0]}
-                - Snapshots generados: {stats['snapshots_count']}
-                - Datos por snapshot: ~{100} velas
+                - Historical period: {historical_period[0]}
+                - Snapshots generated: {stats['snapshots_count']}
+                - Data per snapshot: ~{100} candles
                 """)
 
-            # Progreso del análisis histórico
+            # Progress of historical analysis
             if len(st.session_state.historical_manager.snapshots) > 0:
                 current_pos = st.session_state.historical_visualizer.current_snapshot_index
                 total_pos = len(st.session_state.historical_manager.snapshots)
                 progress = (current_pos + 1) / total_pos
 
-                st.progress(progress, text=f"Navegación histórica: {current_pos + 1}/{total_pos}")
+                st.progress(progress, text=f"Historical navigation: {current_pos + 1}/{total_pos}")
         else:
-            st.warning("⚠️ No hay estadísticas históricas disponibles")
+            st.warning("⚠️ No historical statistics available")
 
 # ➕ Función para auto-navegación histórica
 def auto_navigate_historical():
