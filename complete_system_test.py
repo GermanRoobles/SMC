@@ -1230,6 +1230,12 @@ class ComprehensiveSystemTest:
                 importlib.reload(smc_module)
             except Exception as reload_exc:
                 print(f"⚠️ Error reloading module (restore): {reload_exc}")
+import unittest
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+from test_htf_zones import TestHTFZones
+
 
 def run_comprehensive_test():
     # --- PRUEBAS ESPECÍFICAS PARA SÍMBOLOS MULTI-FUENTE ---
@@ -1261,6 +1267,7 @@ def run_comprehensive_test():
     for symbol, tf, limit in multi_source_symbols:
         tester.test_data_integrity_symbol(symbol, tf, limit)
 
+
     try:
         # Ejecutar todos los tests en secuencia
         df = tester.test_data_integrity()
@@ -1287,6 +1294,11 @@ def run_comprehensive_test():
             tester.test_performance_scalability(df)
 
         tester.test_integration_robustness()
+
+        # --- TEST DE ZONAS HTF (FVG/OB Weekly/Monthly) ---
+        print("\n🔎 TEST DE ZONAS HTF (FVG/OB Weekly/Monthly)")
+        suite = unittest.TestLoader().loadTestsFromTestCase(TestHTFZones)
+        unittest.TextTestRunner(verbosity=2).run(suite)
 
         # Generar reporte final
         system_ok = tester.generate_comprehensive_report()

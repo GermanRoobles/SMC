@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from fetch_data import get_ohlcv, get_ohlcv_extended
+from fetch_data import get_ohlcv, get_ohlcv_extended, get_ohlcv_with_cache
 from smc_analysis import analyze, get_current_session, get_session_color
 from smc_integration import get_smc_bot_analysis, add_bot_signals_to_chart, display_bot_metrics, add_signals_statistics_to_chart
 from smc_historical import create_historical_manager, HistoricalPeriod
@@ -259,12 +259,18 @@ def display_trade_signals(trade_analysis: Dict):
 
 
 # --- Overlays toggles ---
+
 st.sidebar.markdown("### Overlays a mostrar")
 show_fvg = st.sidebar.checkbox("FVG (Fair Value Gaps)", value=True)
 show_ob = st.sidebar.checkbox("Order Blocks", value=True)
 show_liq = st.sidebar.checkbox("Liquidez", value=True)
 show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
 show_swings = st.sidebar.checkbox("Swings", value=True)
+# --- NUEVOS CONTROLES HTF ---
+st.sidebar.markdown("### HTF Overlays & Alertas")
+show_htf_zones = st.sidebar.checkbox("Mostrar FVGs/OBs HTF (Weekly/Monthly) en 4H", value=False)
+enable_htf_alerts = st.sidebar.checkbox("Alertas HTF (FVG/OB/SFP)", value=False)
+htf_timeframes = st.sidebar.multiselect("HTF para overlays", ["1w", "1M"], default=["1w"])
 
 st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
 st.title("📊 Smart Money Concepts - TradingView Style")
@@ -340,7 +346,10 @@ with tab_realtime:
         with cols[idx % 2]:
             st.subheader(f"{symbol_rt} (15m)")
             try:
-                df_rt = get_ohlcv_extended(symbol_rt, "15m", days=2)
+                # Usar caché incremental para datos en tiempo real
+                end_dt = datetime.utcnow()
+                start_dt = end_dt - timedelta(days=2)
+                df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
                 df_rt = validate_and_fix_chart_data(df_rt)
                 if df_rt.empty:
                     st.warning("No hay datos para este símbolo.")
@@ -719,7 +728,10 @@ with tab_overview:
     else:
         # Modo tiempo real
         with st.spinner(f"📊 Cargando {data_days} días de datos para {symbol}..."):
-            df = get_ohlcv_extended(symbol, timeframe, days=data_days)
+            # Usar caché incremental para la carga principal
+            end_dt = datetime.utcnow()
+            start_dt = end_dt - timedelta(days=data_days)
+            df = get_ohlcv_with_cache(symbol, timeframe, start_dt, end_dt)
             if len(df) > 0:
                 show_temp_message('success', f"✅ Cargados {len(df)} puntos de datos desde {df['timestamp'].min().strftime('%Y-%m-%d %H:%M')} hasta {df['timestamp'].max().strftime('%Y-%m-%d %H:%M')}")
             else:
@@ -753,7 +765,10 @@ with tab_overview:
                 with st.spinner("⚡ Ejecutando Motor de Trading TJR..."):
                     # Si HTF está activado, obtener contexto HTF (pero NO pasar a la función si no lo soporta)
                     if htf_enabled and htf_timeframe:
-                        htf_df = get_ohlcv_extended(symbol, htf_timeframe, days=data_days)
+                        # Usar caché incremental para HTF
+                        htf_end = datetime.utcnow()
+                        htf_start = htf_end - timedelta(days=data_days)
+                        htf_df = get_ohlcv_with_cache(symbol, htf_timeframe, htf_start, htf_end)
                         htf_signals = analyze(htf_df)
                         htf_context = {
                             'trend': htf_signals.get('trend', None),
@@ -875,7 +890,88 @@ with tab_overview:
     }
 
     # --- Añadir overlays según toggles ---
+    from utils_htf import get_htf_gaps_and_obs, monitor_fvg_alerts, monitor_ob_alerts, detect_sfp
+    if 'alert_cache' not in st.session_state:
+        st.session_state['alert_cache'] = {}
+    alert_cache = st.session_state['alert_cache']
+    htf_alerts = []
     with st.spinner("📊 Añadiendo overlays..."):
+        # --- HTF overlays y alertas ---
+        # Mostrar overlays HTF en cualquier timeframe <= 4h
+        ltf_valid = ["1m", "5m", "15m", "1h", "4h"]
+        new_htf_alerts = []
+        if show_htf_zones and timeframe in ltf_valid:
+            for htf in htf_timeframes:
+                try:
+                    fvg_zones, ob_zones, ltf_df = get_htf_gaps_and_obs(symbol, htf=htf, ltf=timeframe)
+                    # Dibujar FVGs HTF
+                    for zone in fvg_zones:
+                        fig.add_shape(
+                            type="rect",
+                            x0=df["timestamp"].iloc[0],
+                            x1=df["timestamp"].iloc[-1],
+                            y0=zone["bottom"],
+                            y1=zone["top"],
+                            fillcolor="#00BFFF" if htf=="1w" else "#FFD700",
+                            opacity=0.10 if htf=="1w" else 0.07,
+                            line=dict(color="#00BFFF" if htf=="1w" else "#FFD700", width=2, dash="dot")
+                        )
+                        fig.add_annotation(
+                            x=df["timestamp"].iloc[-1],
+                            y=zone["top"],
+                            text=f"HTF FVG {htf.upper()}",
+                            showarrow=False,
+                            font=dict(size=10, color="#232323", family="Arial Black"),
+                            bgcolor="#B3E5FC" if htf=="1w" else "#FFF9C4",
+                            bordercolor="#00BFFF" if htf=="1w" else "#FFD700",
+                            borderwidth=1
+                        )
+                    # Dibujar OBs HTF
+                    for zone in ob_zones:
+                        fig.add_shape(
+                            type="rect",
+                            x0=df["timestamp"].iloc[0],
+                            x1=df["timestamp"].iloc[-1],
+                            y0=zone["bottom"],
+                            y1=zone["top"],
+                            fillcolor="#4CAF50" if htf=="1w" else "#F44336",
+                            opacity=0.10 if htf=="1w" else 0.07,
+                            line=dict(color="#4CAF50" if htf=="1w" else "#F44336", width=2, dash="dot")
+                        )
+                        fig.add_annotation(
+                            x=df["timestamp"].iloc[-1],
+                            y=zone["top"],
+                            text=f"HTF OB {htf.upper()}",
+                            showarrow=False,
+                            font=dict(size=10, color="#fff", family="Arial Black"),
+                            bgcolor="#C8E6C9" if htf=="1w" else "#FFCDD2",
+                            bordercolor="#4CAF50" if htf=="1w" else "#F44336",
+                            borderwidth=1
+                        )
+                    # --- Alertas HTF ---
+                    if enable_htf_alerts:
+                        price = df['close'].iloc[-1]
+                        # Solo alertas nuevas (no repetidas)
+                        prev_alerts = set(st.session_state.get('last_htf_alerts', []))
+                        new_fvg_alerts = [a for a in monitor_fvg_alerts(price, fvg_zones, alert_cache) if a not in prev_alerts]
+                        new_ob_alerts = [a for a in monitor_ob_alerts(price, ob_zones, alert_cache) if a not in prev_alerts]
+                        # SFPs en 4H
+                        sfps = detect_sfp(df)
+                        new_sfp_alerts = []
+                        for sfp in sfps:
+                            key = f"sfp_{sfp['timestamp']}_{sfp['type']}"
+                            msg = f"{sfp['type']} detected at {sfp['level']}"
+                            if not alert_cache.get(key) and msg not in prev_alerts:
+                                new_sfp_alerts.append(msg)
+                                alert_cache[key] = True
+                        new_htf_alerts += new_fvg_alerts + new_ob_alerts + new_sfp_alerts
+                except Exception as e:
+                    st.warning(f"Error en overlays/alertas HTF ({htf}): {e}")
+        # Mostrar solo las 10 alertas nuevas más recientes
+        if enable_htf_alerts and new_htf_alerts:
+            st.session_state['last_htf_alerts'] = new_htf_alerts[-10:]
+            for a in new_htf_alerts[-10:]:
+                st.warning(a)
         # FVG
         if show_fvg and "fvg" in signals:
             fvg_data = signals["fvg"]

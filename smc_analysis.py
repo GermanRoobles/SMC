@@ -1,3 +1,16 @@
+__all__ = [
+    'analyze',
+    'get_current_session',
+    'get_session_color',
+    'detect_fvgs',
+    'detect_orderblocks',
+    'detect_liquidity',
+]
+def detect_fvgs(df):
+    """
+    Wrapper para detectar FVGs usando smc.fvg(df), para compatibilidad con utils_htf.py
+    """
+    return smc.fvg(df)
 from smartmoneyconcepts import smc
 import pandas as pd
 import numpy as np
@@ -103,33 +116,15 @@ def run_analysis(df, params=None, timeframe="15m"):
     print(f"[DEBUG] Liquidity detection: {df['high'].max()}-{df['low'].min()}")
     # Calcular sesiones
     sessions_data = {}
-    try:
-        sessions_data["tokyo"] = smc.sessions(df, session="Tokyo", start_time="00:00", end_time="09:00")
-    except:
-        sessions_data["tokyo"] = pd.DataFrame()
-    try:
-        sessions_data["london"] = smc.sessions(df, session="London", start_time="08:00", end_time="17:00")
-    except:
-        sessions_data["london"] = pd.DataFrame()
-    try:
-        sessions_data["new_york"] = smc.sessions(df, session="New York", start_time="13:00", end_time="22:00")
-    except:
-        sessions_data["new_york"] = pd.DataFrame()
-    # Volatilidad móvil
-    volatility_series = calc_volatility(df)
-    volatility_pct = volatility_series.iloc[-1] * 100 if not volatility_series.isna().all() else 0
+    # Calcular volatilidad
+    volatility = calc_volatility(df)
+    volatility_pct = volatility.iloc[-1] * 100 if not volatility.empty else 0
     if volatility_pct < LOW_VOL_THRESHOLD:
         volatility_label = "LOW_VOLATILITY"
     elif volatility_pct > HIGH_VOL_THRESHOLD:
         volatility_label = "HIGH_VOLATILITY"
     else:
         volatility_label = "NORMAL_VOLATILITY"
-    # --- Manejo de gaps extremos ---
-    if has_extreme_gap(df):
-        print("[GAP] Gap extremo detectado, omitiendo generación de señales.")
-        signals = []
-    else:
-        signals = None  # Se generan normalmente en el motor de señales
     return {
         "fvg": smc.fvg(df),
         "orderblocks": detect_orderblocks(df, swing_highs_lows, timeframe),
@@ -139,8 +134,16 @@ def run_analysis(df, params=None, timeframe="15m"):
         "swing_highs_lows": swing_highs_lows,
         "volatility": volatility_label,
         "volatility_pct": volatility_pct,
-        "signals": signals
     }
+
+def detect_order_blocks(df, swing_highs_lows=None, timeframe="15m"):
+    """
+    Wrapper para compatibilidad: detecta order blocks igual que detect_orderblocks.
+    Si swing_highs_lows no se pasa, lo calcula automáticamente (para HTF).
+    """
+    if swing_highs_lows is None:
+        swing_highs_lows = smc.swing_highs_lows(df, swing_length=10)
+    return detect_orderblocks(df, swing_highs_lows, timeframe)
 
 def analyze(df, params=None, timeframe="15m"):
     return run_analysis(df, params, timeframe)
