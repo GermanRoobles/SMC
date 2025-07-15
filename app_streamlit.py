@@ -3,6 +3,24 @@ import plotly.graph_objects as go
 import pandas as pd
 import time
 from datetime import datetime, timedelta
+import requests
+# --- TELEGRAM ALERTS ---
+TELEGRAM_TOKEN = "7861899054:AAG0rpHiCwIPOu0o1C_7BnlUCnjD-ckew2k"
+TELEGRAM_CHAT_ID = "-1002755466186"
+
+def send_telegram_alert(message: str):
+    """Send a message to Telegram via bot API."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID or '<' in TELEGRAM_TOKEN:
+        print(f"[TELEGRAM][SKIP] {message}")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        resp = requests.post(url, data=payload, timeout=5)
+        if resp.status_code != 200:
+            print(f"[TELEGRAM][ERROR] {resp.text}")
+    except Exception as e:
+        print(f"[TELEGRAM][EXC] {e}")
 from typing import Dict, List, Optional
 from fetch_data import get_ohlcv, get_ohlcv_extended, get_ohlcv_with_cache
 from smc_analysis import analyze, get_current_session, get_session_color
@@ -12,15 +30,214 @@ from smc_historical_viz import create_historical_visualizer, display_historical_
 from smc_trade_engine import get_trade_engine_analysis, TradeSignal, SignalType
 from smc_backtester import run_backtest_analysis
 
+# --- SFP DETECTION ---
+# --- SFP DETECTION ---
+def detect_sfps(
+    df,
+    lookback=200,
+    market_structure='neutral',  # 'bullish', 'bearish', or 'neutral'
+    fvgs=None,
+    obs=None,
+    choch_list=None,
+    min_body_ratio=0,
+    max_zone_distance_pct=0.05,  # ultra-relaxed for debug
+    require_choch=False,
+    symbol=None,
+    timeframe=None,
+):
+    """
+    Detect Swing Failure Patterns (SFPs) with validity filters and send Telegram alerts.
+    """
+    sfps = []
+    if len(df) < 3:
+        print("[SFP] DataFrame too short")
+        return sfps
+
+    fvgs = fvgs or []
+    obs = obs or []
+    choch_list = choch_list or []
+
+    df = df.iloc[-lookback:]
+    idxs = df.index if not isinstance(df.index, pd.RangeIndex) else df['timestamp'] if 'timestamp' in df.columns else df.index
+
+    def is_near_zone(price, zones):
+        if not zones:
+            return True
+        return any(abs(price - z['mid']) / price < max_zone_distance_pct for z in zones if 'mid' in z)
+
+    def is_body_strong(i):
+        return True
+
+    def has_choch_after(ts, sfp_type):
+        direction = 'Bullish' if sfp_type == 'Bullish SFP' else 'Bearish'
+        for c in choch_list:
+            c_type = c.get('type', None)
+            if c['timestamp'] > ts and isinstance(c_type, str) and direction in c_type:
+                return True
+        return False
+
+    swing_high_candidates = 0
+    swing_high_passed = 0
+    swing_low_candidates = 0
+    swing_low_passed = 0
+
+
+    # --- ALERTS: Only send if event is recent (e.g., last 5 minutes) ---
+    ALERT_TIME_WINDOW_MINUTES = 5
+    def is_recent(ts):
+        try:
+            now = datetime.utcnow()
+            # ts puede ser datetime o string o timestamp
+            if isinstance(ts, (int, float)):
+                ts_dt = datetime.utcfromtimestamp(ts)
+            elif isinstance(ts, str):
+                ts_dt = pd.to_datetime(ts, utc=True)
+            elif isinstance(ts, pd.Timestamp):
+                ts_dt = ts.to_pydatetime()
+            elif isinstance(ts, datetime):
+                ts_dt = ts
+            else:
+                return False
+            return (now - ts_dt).total_seconds() < ALERT_TIME_WINDOW_MINUTES * 60
+        except Exception:
+            return False
+
+    def alert_liquidity_sweep(ts, sweep_type, price):
+        if is_recent(ts):
+            msg = f"[TJR][{symbol or ''} {timeframe or ''}] Liquidity sweep detected: {sweep_type} at {price:.2f} ({ts})"
+            send_telegram_alert(msg)
+
+    def alert_zone_created(ts, zone_type, price):
+        if is_recent(ts):
+            msg = f"[TJR][{symbol or ''} {timeframe or ''}] {zone_type} created at {price:.2f} ({ts})"
+            send_telegram_alert(msg)
+
+    def alert_sfp(ts, sfp_type, swept_level, close):
+        if is_recent(ts):
+            msg = f"[SFP][{symbol or ''} {timeframe or ''}] {sfp_type} | Sweep: {swept_level:.2f} | Close: {close:.2f} | {ts}"
+            send_telegram_alert(msg)
+
+    def alert_choch(ts, choch_type, price):
+        if is_recent(ts):
+            msg = f"[CHoCH][{symbol or ''} {timeframe or ''}] {choch_type} at {price:.2f} ({ts})"
+            send_telegram_alert(msg)
+
+    print(f"[SFP][DEBUG] market_structure: {market_structure}, #FVGs: {len(fvgs)}, #OBs: {len(obs)}")
+
+    def get_row_timestamp(row, fallback):
+        # Robustly extract a timestamp from a row or fallback
+        ts = None
+        if isinstance(row, dict):
+            ts = row.get('timestamp', fallback)
+        elif hasattr(row, 'get'):
+            try:
+                ts = row.get('timestamp', fallback)
+            except Exception:
+                ts = fallback
+        elif hasattr(row, '__getitem__'):
+            try:
+                ts = row['timestamp'] if 'timestamp' in row else fallback
+            except Exception:
+                ts = fallback
+        else:
+            ts = fallback
+        return ts
+
+    # Helper to get safe fallback for timestamp
+    def get_fallback_idx(i):
+        # If idxs is a RangeIndex, fallback should be i (int), else idxs[i]
+        import pandas as pd
+        if isinstance(idxs, pd.RangeIndex):
+            return i
+        else:
+            return idxs[i]
+
+    for i in range(1, len(df) - 1):
+        prev, curr, next_ = df.iloc[i - 1], df.iloc[i], df.iloc[i + 1]
+
+        # --- Step 1: Sweep/Liquidity ---
+        fallback_idx = get_fallback_idx(i)
+        if curr['high'] > prev['high'] and curr['high'] > next_['high']:
+            swing_high = curr['high']
+            ts_curr = get_row_timestamp(curr, fallback_idx)
+            alert_liquidity_sweep(ts_curr, 'High', swing_high)
+            # Step 2: OB/FVG after sweep (simulate, real logic should check for new OB/FVG after sweep)
+            if obs:
+                alert_zone_created(ts_curr, 'Order Block', swing_high)
+            elif fvgs:
+                alert_zone_created(ts_curr, 'FVG', swing_high)
+            for j in range(i + 1, len(df)):
+                high_j = df.iloc[j]['high']
+                close_j = df.iloc[j]['close']
+                fallback_j = get_fallback_idx(j)
+                ts_j = get_row_timestamp(df.iloc[j], fallback_j)
+                if high_j > swing_high and close_j < swing_high:
+                    swing_high_candidates += 1
+                    choch_ok = has_choch_after(ts_j, 'Bearish SFP') if require_choch else True
+                    if not choch_ok:
+                        print(f"[SFP][Bearish] Candidate at {ts_j} rejected: no_choch")
+                        break
+                    swing_high_passed += 1
+                    sfps.append({
+                        'timestamp': ts_j,
+                        'type': 'Bearish SFP',
+                        'swept_level': swing_high,
+                        'close': close_j
+                    })
+                    alert_sfp(ts_j, 'Bearish SFP', swing_high, close_j)
+                    # Step 3: CHoCH after SFP (simulate, real logic should check for CHoCH)
+                    if choch_list:
+                        for c in choch_list:
+                            c_type = c.get('type', None)
+                            if c['timestamp'] > ts_j and isinstance(c_type, str) and 'Bearish' in c_type:
+                                alert_choch(c['timestamp'], c['type'], swing_high)
+                                break
+                    break
+
+        if curr['low'] < prev['low'] and curr['low'] < next_['low']:
+            swing_low = curr['low']
+            ts_curr = get_row_timestamp(curr, fallback_idx)
+            alert_liquidity_sweep(ts_curr, 'Low', swing_low)
+            if obs:
+                alert_zone_created(ts_curr, 'Order Block', swing_low)
+            elif fvgs:
+                alert_zone_created(ts_curr, 'FVG', swing_low)
+            for j in range(i + 1, len(df)):
+                low_j = df.iloc[j]['low']
+                close_j = df.iloc[j]['close']
+                fallback_j = get_fallback_idx(j)
+                ts_j = get_row_timestamp(df.iloc[j], fallback_j)
+                if low_j < swing_low and close_j > swing_low:
+                    swing_low_candidates += 1
+                    choch_ok = has_choch_after(ts_j, 'Bullish SFP') if require_choch else True
+                    if not choch_ok:
+                        print(f"[SFP][Bullish] Candidate at {ts_j} rejected: no_choch")
+                        break
+                    swing_low_passed += 1
+                    sfps.append({
+                        'timestamp': ts_j,
+                        'type': 'Bullish SFP',
+                        'swept_level': swing_low,
+                        'close': close_j
+                    })
+                    alert_sfp(ts_j, 'Bullish SFP', swing_low, close_j)
+                    if choch_list:
+                        for c in choch_list:
+                            c_type = c.get('type', None)
+                            if c['timestamp'] > ts_j and isinstance(c_type, str) and 'Bullish' in c_type:
+                                alert_choch(c['timestamp'], c['type'], swing_low)
+                                break
+                    break
+
+    print(f"[SFP] swing_high_candidates: {swing_high_candidates}, swing_high_passed: {swing_high_passed}")
+    print(f"[SFP] swing_low_candidates: {swing_low_candidates}, swing_low_passed: {swing_low_passed}")
+    print(f"[SFP] Total SFPs detected: {len(sfps)}")
+    return sfps
+
 # Advertencia Streamlit: missing ScriptRunContext
 # Solución: ignorar warning si aparece, pero loguear para debug
 import warnings
-try:
-    import streamlit.runtime.scriptrunner
-except ImportError:
-    pass
-else:
-    warnings.filterwarnings("ignore", message=".*ScriptRunContext.*")
+warnings.filterwarnings("ignore", message=".*ScriptRunContext.*")
 
 # Funciones auxiliares para validar datos y crear gráficos optimizados
 def validate_and_fix_chart_data(df):
@@ -261,9 +478,9 @@ def display_trade_signals(trade_analysis: Dict):
 # --- Overlays toggles ---
 #############################
 
-st.sidebar.markdown("### Overlays a mostrar")
-st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
-st.title("📊 Smart Money Concepts - TradingView Style")
+# st.sidebar.markdown("### Overlays a mostrar")
+st.set_page_config(layout="wide", page_title="SMC - Panal")
+st.title("📊 SMC - Panal")
 
 
 # --- SIDEBAR CONTROLS (ENGLISH) ---
@@ -273,16 +490,23 @@ show_ob = st.sidebar.checkbox("Order Blocks", value=True)
 show_liq = st.sidebar.checkbox("Liquidity", value=True)
 show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
 show_swings = st.sidebar.checkbox("Swings", value=True)
+
 # --- HTF CONTROLS ---
 st.sidebar.markdown("### HTF Overlays & Alerts")
 show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
 enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
 htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
 
-st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style")
-st.title("📊 Smart Money Concepts - TradingView Style")
+# --- SFP CHoCH FILTER CONTROL ---
+require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
 
-symbol = st.sidebar.selectbox("Symbol", ["BTC/USDT", "ETH/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500"])
+# st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style 1")
+# st.title("📊 Smart Money Concepts - TradingView Style 2")
+
+symbol = st.sidebar.selectbox("Symbol", [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+    "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
+])
 timeframe = st.sidebar.selectbox(
     "Timeframe",
     ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
@@ -351,50 +575,49 @@ with tab_realtime:
     st.markdown("""
     View SMC indicators in real time for BTC/USDT, ETH/USDT, EUR/USD, and SP500 on the 15m timeframe.
     """)
-    symbols_rt = ["BTC/USDT", "ETH/USDT", "EUR/USD", "SP500"]
+    symbols_rt = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
     cols = st.columns(2)
     for idx, symbol_rt in enumerate(symbols_rt):
         with cols[idx % 2]:
             st.subheader(f"{symbol_rt} (15m)")
-            try:
-                # Usar caché incremental para datos en tiempo real
-                end_dt = datetime.utcnow()
-                start_dt = end_dt - timedelta(days=2)
-                df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
-                df_rt = validate_and_fix_chart_data(df_rt)
-                if df_rt.empty:
-                    st.warning("No data available for this symbol.")
-                    continue
-                signals_rt = analyze(df_rt)
-                fig_rt = create_optimized_chart(df_rt)
-                # --- Añadir overlays igual que en la pestaña principal ---
-                # FVG
-                if "fvg" in signals_rt:
-                    fvg_data = signals_rt["fvg"]
-                    for i, row in fvg_data.iterrows():
-                        if pd.notna(row["FVG"]):
-                            is_bullish = row["FVG"] == 1
-                            color = '#2962FF' if is_bullish else '#FF6D00'
-                            fig_rt.add_shape(
-                                type="rect",
-                                x0=df_rt.iloc[i]["timestamp"],
-                                x1=df_rt.iloc[min(i+8, len(df_rt)-1)]["timestamp"],
-                                y0=row["Bottom"],
-                                y1=row["Top"],
-                                fillcolor=color,
-                                opacity=0.15,
-                                line=dict(color=color, width=1, dash="dot")
-                            )
-                            if i % 3 == 0:
-                                fig_rt.add_annotation(
-                                    x=df_rt.iloc[min(i+2, len(df_rt)-1)]["timestamp"],
-                                    y=(row["Top"] + row["Bottom"]) / 2,
-                                    text="FVG",
-                                    showarrow=False,
-                                    font=dict(size=10, color=color, family="Arial Black"),
-                                    bgcolor="rgba(255,255,255,0.8)",
-                                    bordercolor=color,
-                                    borderwidth=1
+            # Usar caché incremental para datos en tiempo real
+            end_dt = datetime.utcnow()
+            start_dt = end_dt - timedelta(days=2)
+            df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
+            df_rt = validate_and_fix_chart_data(df_rt)
+            if df_rt.empty:
+                st.warning("No data available for this symbol.")
+                continue
+            signals_rt = analyze(df_rt)
+            fig_rt = create_optimized_chart(df_rt)
+            # --- Añadir overlays igual que en la pestaña principal ---
+            # FVG
+            if "fvg" in signals_rt:
+                fvg_data = signals_rt["fvg"]
+                for i, row in fvg_data.iterrows():
+                    if pd.notna(row["FVG"]):
+                        is_bullish = row["FVG"] == 1
+                        color = '#2962FF' if is_bullish else '#FF6D00'
+                        fig_rt.add_shape(
+                            type="rect",
+                            x0=df_rt.iloc[i]["timestamp"],
+                            x1=df_rt.iloc[min(i+8, len(df_rt)-1)]["timestamp"],
+                            y0=row["Bottom"],
+                            y1=row["Top"],
+                            fillcolor=color,
+                            opacity=0.15,
+                            line=dict(color=color, width=1, dash="dot")
+                        )
+                        if i % 3 == 0:
+                            fig_rt.add_annotation(
+                                x=df_rt.iloc[min(i+2, len(df_rt)-1)]["timestamp"],
+                                y=(row["Top"] + row["Bottom"]) / 2,
+                                text="FVG",
+                                showarrow=False,
+                                font=dict(size=10, color=color, family="Arial Black"),
+                                bgcolor="rgba(255,255,255,0.8)",
+                                bordercolor=color,
+                                borderwidth=1
                                 )
                 # Order Blocks
                 if "orderblocks" in signals_rt:
@@ -488,9 +711,72 @@ with tab_realtime:
                                     fillcolor=color,
                                     opacity=0.5
                                 )
+                # --- SFP Overlay (Real-Time Chart, filtered) ---
+                # Get market structure, FVGs, OBs, CHoCH for RT chart
+                market_structure_rt = 'neutral'
+                fvgs_rt = []
+                obs_rt = []
+                choch_rt = []
+                # Try to extract from signals_rt if available
+                if 'market_structure' in signals_rt:
+                    market_structure_rt = signals_rt['market_structure']
+                if 'fvg' in signals_rt and hasattr(signals_rt['fvg'], 'iterrows'):
+                    fvgs_rt = [
+                        {'mid': (row['Top'] + row['Bottom']) / 2}
+                        for _, row in signals_rt['fvg'].iterrows() if pd.notna(row.get('FVG', None))
+                    ]
+                if 'orderblocks' in signals_rt and hasattr(signals_rt['orderblocks'], 'iterrows'):
+                    obs_rt = [
+                        {'mid': (row['Top'] + row['Bottom']) / 2}
+                        for _, row in signals_rt['orderblocks'].iterrows() if pd.notna(row.get('OB', None))
+                    ]
+                if 'bos_choch' in signals_rt and hasattr(signals_rt['bos_choch'], 'iterrows'):
+                    choch_rt = [
+                        {'timestamp': row['timestamp'] if 'timestamp' in row else df_rt.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
+                        for i, row in signals_rt['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
+                    ]
+                sfps_rt = detect_sfps(
+                    df_rt,
+                    lookback=200,
+                    market_structure=market_structure_rt,
+                    fvgs=fvgs_rt,
+                    obs=obs_rt,
+                    choch_list=choch_rt,
+                    require_choch=False
+                )
+                for sfp in sfps_rt:
+                    ts = sfp['timestamp']
+                    if 'Bullish' in sfp['type']:
+                        fig_rt.add_annotation(
+                            x=ts,
+                            y=sfp['swept_level'],
+                            text="🟢 SFP",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1.2,
+                            arrowwidth=2,
+                            arrowcolor="#26A69A",
+                            font=dict(size=11, color="#26A69A", family="Arial Black"),
+                            bgcolor="#232323",
+                            bordercolor="#26A69A",
+                            borderwidth=1
+                        )
+                    elif 'Bearish' in sfp['type']:
+                        fig_rt.add_annotation(
+                            x=ts,
+                            y=sfp['swept_level'],
+                            text="🔴 SFP",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1.2,
+                            arrowwidth=2,
+                            arrowcolor="#F44336",
+                            font=dict(size=11, color="#F44336", family="Arial Black"),
+                            bgcolor="#232323",
+                            bordercolor="#F44336",
+                            borderwidth=1
+                        )
                 st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
-            except Exception as e:
-                st.error(f"Error in {symbol_rt}: {e}")
 with tab_example:
     st.header("Visual Example: SMC Simplified by TJR Strategy (LONG and SHORT)")
     st.markdown("""
@@ -999,6 +1285,7 @@ with tab_overview:
                         opacity=0.15,
                         line=dict(color=color, width=1, dash="dot")
                     )
+                    # Restore FVG annotation every 3rd FVG
                     if i % 3 == 0:
                         fig.add_annotation(
                             x=df.iloc[min(i+2, len(df)-1)]["timestamp"],
@@ -1010,6 +1297,103 @@ with tab_overview:
                             bordercolor=color,
                             borderwidth=1
                         )
+        # --- SESSION BACKGROUND COLOR ---
+        # Add background color depending on which session is open (London, NY, Tokyo, etc.)
+        session_colors = {
+            "tokyo": "rgba(33, 150, 243, 0.07)",      # Blue
+            "london": "rgba(76, 175, 80, 0.07)",      # Green
+            "new_york": "rgba(244, 67, 54, 0.07)",    # Red
+            "between_sessions": "rgba(158, 158, 158, 0.04)"  # Gray
+        }
+        # Assume df['timestamp'] is sorted
+        if 'timestamp' in df.columns:
+            session_col = df['timestamp'].apply(lambda ts: get_current_session(ts))
+            prev_session = None
+            session_start_idx = 0
+            for idx, session in enumerate(session_col):
+                if prev_session is None:
+                    prev_session = session
+                    session_start_idx = idx
+                elif session != prev_session or idx == len(session_col)-1:
+                    # Draw background for previous session
+                    x0 = df.iloc[session_start_idx]["timestamp"]
+                    x1 = df.iloc[idx]["timestamp"] if idx < len(df) else df.iloc[-1]["timestamp"]
+                    color = session_colors.get(prev_session, "rgba(158,158,158,0.04)")
+                    fig.add_vrect(
+                        x0=x0,
+                        x1=x1,
+                        fillcolor=color,
+                        opacity=1.0,
+                        layer="below",
+                        line_width=0
+                    )
+                    prev_session = session
+                    session_start_idx = idx
+
+        # --- SFP Overlay (Main Chart, filtered) ---
+        # Get market structure, FVGs, OBs, CHoCH for main chart
+        market_structure_main = 'neutral'
+        fvgs_main = []
+        obs_main = []
+        choch_main = []
+        if 'market_structure' in signals:
+            market_structure_main = signals['market_structure']
+        if 'fvg' in signals and hasattr(signals['fvg'], 'iterrows'):
+            fvgs_main = [
+                {'mid': (row['Top'] + row['Bottom']) / 2}
+                for _, row in signals['fvg'].iterrows() if pd.notna(row.get('FVG', None))
+            ]
+        if 'orderblocks' in signals and hasattr(signals['orderblocks'], 'iterrows'):
+            obs_main = [
+                {'mid': (row['Top'] + row['Bottom']) / 2}
+                for _, row in signals['orderblocks'].iterrows() if pd.notna(row.get('OB', None))
+            ]
+        if 'bos_choch' in signals and hasattr(signals['bos_choch'], 'iterrows'):
+            choch_main = [
+                {'timestamp': row['timestamp'] if 'timestamp' in row else df.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
+                for i, row in signals['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
+            ]
+        sfps = detect_sfps(
+            df,
+            lookback=200,
+            market_structure=market_structure_main,
+            fvgs=fvgs_main,
+            obs=obs_main,
+            choch_list=choch_main,
+            require_choch=require_choch_sfp
+        )
+        for sfp in sfps:
+            ts = sfp['timestamp']
+            if 'Bullish' in sfp['type']:
+                fig.add_annotation(
+                    x=ts,
+                    y=sfp['swept_level'],
+                    text="🟢 SFP",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1.2,
+                    arrowwidth=2,
+                    arrowcolor="#26A69A",
+                    font=dict(size=11, color="#26A69A", family="Arial Black"),
+                    bgcolor="#232323",
+                    bordercolor="#26A69A",
+                    borderwidth=1
+                )
+            elif 'Bearish' in sfp['type']:
+                fig.add_annotation(
+                    x=ts,
+                    y=sfp['swept_level'],
+                    text="🔴 SFP",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1.2,
+                    arrowwidth=2,
+                    arrowcolor="#F44336",
+                    font=dict(size=11, color="#F44336", family="Arial Black"),
+                    bgcolor="#232323",
+                    bordercolor="#F44336",
+                    borderwidth=1
+                )
         # Order Blocks
         if show_ob and "orderblocks" in signals:
             ob_data = signals["orderblocks"]

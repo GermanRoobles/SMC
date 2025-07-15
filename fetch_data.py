@@ -13,25 +13,56 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
     import pandas as pd
     import numpy as np
     from datetime import datetime, timedelta
+    import streamlit as st
     os.makedirs(CACHE_DIR, exist_ok=True)
     cache_path = os.path.join(CACHE_DIR, f"{symbol.replace('/', '_')}_{timeframe}.parquet")
     start_dt = pd.to_datetime(start)
     end_dt = pd.to_datetime(end)
-    # Detectar proveedor
+    # Ensure tz-awareness for all datetime objects (force UTC)
+    if getattr(start_dt, 'tzinfo', None) is None:
+        start_dt = pd.Timestamp(start_dt).tz_localize('UTC')
+    else:
+        start_dt = pd.Timestamp(start_dt).tz_convert('UTC')
+    if getattr(end_dt, 'tzinfo', None) is None:
+        end_dt = pd.Timestamp(end_dt).tz_localize('UTC')
+    else:
+        end_dt = pd.Timestamp(end_dt).tz_convert('UTC')
+    # Detect provider
+    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
     if provider_hint:
         provider = provider_hint
-    elif symbol in ["BTC/USDT", "ETH/USDT"]:
+    elif symbol in binance_symbols:
         provider = 'binance'
     else:
         provider = 'yahoo'
-    # Cargar caché si existe
-    if os.path.exists(cache_path):
+
+    # --- In-memory session cache for fast incremental updates ---
+    session_key = f"ohlcv_{symbol.replace('/', '_')}_{timeframe}"
+    cache_loaded_from = None
+    if hasattr(st, 'session_state') and session_key in st.session_state:
+        cache_df = st.session_state[session_key]
+        cache_loaded_from = 'memory'
+        print(f"[CACHE] Cache hit in memory for {session_key} ({len(cache_df)} rows)")
+    elif os.path.exists(cache_path):
         cache_df = pd.read_parquet(cache_path)
         cache_df['timestamp'] = pd.to_datetime(cache_df['timestamp'])
+        if hasattr(st, 'session_state'):
+            st.session_state[session_key] = cache_df.copy()
+        cache_loaded_from = 'disk'
+        print(f"[CACHE] Cache hit on disk for {session_key} ({len(cache_df)} rows)")
     else:
         cache_df = pd.DataFrame()
-    # Determinar qué rangos faltan
+        cache_loaded_from = 'none'
+        print(f"[CACHE] No cache found for {session_key}")
+
+    # Determine missing ranges
     if not cache_df.empty:
+        cache_df['timestamp'] = pd.to_datetime(cache_df['timestamp'])
+        # Force all cache timestamps to UTC tz-aware
+        if getattr(cache_df['timestamp'].dt, 'tz', None) is None:
+            cache_df['timestamp'] = cache_df['timestamp'].dt.tz_localize('UTC')
+        else:
+            cache_df['timestamp'] = cache_df['timestamp'].dt.tz_convert('UTC')
         min_cached = cache_df['timestamp'].min()
         max_cached = cache_df['timestamp'].max()
     else:
@@ -41,27 +72,26 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
         missing_ranges.append((start_dt, min_cached or end_dt))
     if max_cached is None or end_dt > max_cached:
         missing_ranges.append((max_cached or start_dt, end_dt))
-    # Descargar y unir los bloques faltantes
+
+    # Download and join only missing blocks
     new_data = []
+    downloaded_any = False
     for rng_start, rng_end in missing_ranges:
         if rng_start is None or rng_end is None or rng_start >= rng_end:
             continue
-        print(f"Descargando {symbol} {timeframe} desde {rng_start} hasta {rng_end}")
+        print(f"[DOWNLOAD] Downloading {symbol} {timeframe} from {rng_start} to {rng_end}")
+        downloaded_any = True
         if provider == 'binance':
-            # Usa get_ohlcv_full para Binance
             df = get_ohlcv_full(symbol, timeframe, since=rng_start, until=rng_end)
         else:
-            # Yahoo Finance: descarga bloque único (yfinance no permite paginación, pero sí varios periodos)
             import yfinance as yf
             interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "4h": "240m", "1d": "1d"}
-            yf_symbol = symbol
             ymap = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "XAU/USD": "XAUUSD=X", "SP500": "^GSPC"}
             yf_symbol = ymap.get(symbol, symbol)
             yf_interval = interval_map.get(timeframe, "15m")
             df = yf.download(yf_symbol, start=rng_start, end=rng_end + timedelta(days=1), interval=yf_interval, progress=False)
             if not df.empty:
                 df = df.reset_index()
-                # Normalizar columnas
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = ['_'.join([str(i) for i in col if i]) for col in df.columns.values]
                 df.columns = [str(col).lower() for col in df.columns]
@@ -73,7 +103,6 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                     df['timestamp'] = pd.to_datetime(df['index'])
                 else:
                     df['timestamp'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-                # Remap columns if needed
                 for col in ['open', 'high', 'low', 'close']:
                     if col not in df.columns:
                         candidates = [c for c in df.columns if c.startswith(col)]
@@ -84,20 +113,45 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                 required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 missing = [col for col in ['open', 'high', 'low', 'close'] if col not in df.columns]
                 if missing:
-                    print(f"❌ Faltan columnas requeridas de precios en Yahoo Finance para {symbol}: {missing}")
+                    print(f"❌ Missing required price columns from Yahoo Finance for {symbol}: {missing}")
                     continue
                 df = df[required_cols]
         if not df.empty:
             new_data.append(df)
-    # Unir todo y limpiar duplicados
+
+    # Merge all and clean duplicates
     all_data = pd.concat([cache_df] + new_data, ignore_index=True)
     if not all_data.empty:
         all_data = all_data.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
-        # Filtrar solo el rango solicitado
+        # Ensure tz-awareness matches for filtering
+        if hasattr(all_data['timestamp'], 'dt') and all_data['timestamp'].dt.tz is not None:
+            # If timestamps are tz-aware, localize/convert start_dt and end_dt to UTC
+            import pandas as pd
+            if getattr(start_dt, 'tzinfo', None) is None:
+                start_dt = pd.Timestamp(start_dt).tz_localize('UTC')
+            else:
+                start_dt = pd.Timestamp(start_dt).tz_convert('UTC')
+            if getattr(end_dt, 'tzinfo', None) is None:
+                end_dt = pd.Timestamp(end_dt).tz_localize('UTC')
+            else:
+                end_dt = pd.Timestamp(end_dt).tz_convert('UTC')
+        # Filter only requested range
         mask = (all_data['timestamp'] >= start_dt) & (all_data['timestamp'] <= end_dt)
         result = all_data.loc[mask].copy()
-        # Actualizar caché
+        # Update both disk and session cache
         all_data.to_parquet(cache_path, index=False)
+        if hasattr(st, 'session_state'):
+            st.session_state[session_key] = all_data.copy()
+        # UI indicator for cache/download source
+        if hasattr(st, 'info'):
+            if downloaded_any:
+                st.info(f"Data for {symbol} {timeframe} was downloaded and cached. Rows: {len(result)}")
+            elif cache_loaded_from == 'memory':
+                st.info(f"Data for {symbol} {timeframe} loaded from memory cache. Rows: {len(result)}")
+            elif cache_loaded_from == 'disk':
+                st.info(f"Data for {symbol} {timeframe} loaded from disk cache. Rows: {len(result)}")
+            else:
+                st.info(f"Data for {symbol} {timeframe} loaded. Rows: {len(result)}")
         return result
     return pd.DataFrame()
 import ccxt
@@ -119,7 +173,8 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
         DataFrame con datos OHLC
     """
     # Detectar si es símbolo de Binance o de Yahoo Finance
-    if symbol in ["BTC/USDT", "ETH/USDT"]:
+    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
+    if symbol in binance_symbols:
         exchange = ccxt.binance()
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -196,7 +251,8 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
         DataFrame con datos OHLC extendidos
     """
     # Detectar si es símbolo de Binance o de Yahoo Finance
-    if symbol in ["BTC/USDT", "ETH/USDT"]:
+    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
+    if symbol in binance_symbols:
         # Calcular límite basado en días y timeframe
         timeframe_minutes = {
             '1m': 1,
@@ -318,9 +374,25 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         time.sleep(sleep_sec)
     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    # Force all timestamps to UTC tz-aware
+    if getattr(df['timestamp'].dt, 'tz', None) is None:
+        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+    else:
+        df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+    # Ensure since/until are UTC tz-aware
     if since:
-        df = df[df["timestamp"] >= pd.to_datetime(since)]
+        since_dt = pd.to_datetime(since)
+        if getattr(since_dt, 'tzinfo', None) is None:
+            since_dt = pd.Timestamp(since_dt).tz_localize('UTC')
+        else:
+            since_dt = pd.Timestamp(since_dt).tz_convert('UTC')
+        df = df[df["timestamp"] >= since_dt]
     if until:
-        df = df[df["timestamp"] <= pd.to_datetime(until)]
+        until_dt = pd.to_datetime(until)
+        if getattr(until_dt, 'tzinfo', None) is None:
+            until_dt = pd.Timestamp(until_dt).tz_localize('UTC')
+        else:
+            until_dt = pd.Timestamp(until_dt).tz_convert('UTC')
+        df = df[df["timestamp"] <= until_dt]
     df = df.reset_index(drop=True)
     return df
