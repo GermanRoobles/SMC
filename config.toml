@@ -1,5 +1,4 @@
 [client]
+favicon = "img-smc-panal.png"
 toolbar_navigation = false
 show_logo = false
-[client.toolbar.icons]
-favicon = "img-smc-panal.png"
