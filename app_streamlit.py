@@ -2570,9 +2570,10 @@ if not enable_historical and refresh_interval > 0:
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"""
 <div style="text-align: center; color: #888; font-size: 12px;">
-💡 <b>TradingView Style SMC</b><br>
+💡 <b>SMC - Panal</b><br>
 Smart Money Concepts en tiempo real<br>
 <i>Sesión actual: {session_info}</i><br>
-<i>Desarrollado con ❤️ para traders</i>
+<i>Developed by G's for bitches</i>
+<i>Yes, u a bitch</i>
 </div>
 """, unsafe_allow_html=True)
