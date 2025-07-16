@@ -512,10 +512,11 @@ if is_mobile():
     with st.expander("🔧 Controles principales", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
-            symbol = st.selectbox("Symbol", [
-                "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+            all_pairs = [
+                "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "BNB/USDT", "ADA/USDT", "SUI/USDT", "HBAR/USDT", "FARTCOIN/USDT",
                 "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
-            ])
+            ]
+            symbol = st.selectbox("Symbol", all_pairs)
             timeframe = st.selectbox(
                 "Timeframe",
                 ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
@@ -592,10 +593,11 @@ else:
     enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
     htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
     require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
-    symbol = st.sidebar.selectbox("Symbol", [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+    all_pairs = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "BNB/USDT", "ADA/USDT", "SUI/USDT", "HBAR/USDT", "FARTCOIN/USDT",
         "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
-    ])
+    ]
+    symbol = st.sidebar.selectbox("Symbol", all_pairs)
     timeframe = st.sidebar.selectbox(
         "Timeframe",
         ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
@@ -654,38 +656,51 @@ tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, ta
 # Register app end alert (when Streamlit script finishes)
 import atexit
 def send_app_end_alert():
-    try:
-        send_telegram_alert("🛑 SMC Streamlit app has stopped running.")
-    except Exception as e:
-        print(f"[TELEGRAM][END][EXC] {e}")
+    if "telegram_end_sent" not in st.session_state:
+        try:
+            send_telegram_alert("🛑 SMC Streamlit app has stopped running.")
+        except Exception as e:
+            print(f"[TELEGRAM][END][EXC] {e}")
+        st.session_state["telegram_end_sent"] = True
 atexit.register(send_app_end_alert)
 
 # --- NUEVA PESTAÑA: TIEMPO REAL MULTI-CHART ---
 with tab_realtime:
     st.header("🟢 Real-Time Multi-Chart (15m)")
     st.markdown("""
-    View SMC indicators in real time for BTC/USDT, ETH/USDT, EUR/USD, and SP500 on the 15m timeframe.
+    View SMC indicators in real time for up to 4 selected pairs on the 15m timeframe. You can choose which pairs to display below.
     """)
-    symbols_rt = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
+    # Full list of available pairs
+    available_pairs = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500",
+        "FARTCOIN/USDT", "BNB/USDT", "ADA/USDT", "DOGE/USDT", "SUI/USDT", "HBAR/USDT"
+    ]
+    # User selection for pairs to show
+    selected_pairs = st.multiselect(
+        "Select up to 4 pairs to display:",
+        options=available_pairs,
+        default=["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"],
+        max_selections=4,
+        help="Choose which pairs to show in the real-time multi-chart tab."
+    )
     cols = st.columns(2)
-    for idx, symbol_rt in enumerate(symbols_rt):
+    # Send Telegram alerts for all selected pairs
+    for idx, symbol_rt in enumerate(selected_pairs):
         with cols[idx % 2]:
             st.subheader(f"{symbol_rt} (15m)")
-            # Usar caché incremental para datos en tiempo real
+            yf_symbol = symbol_rt.replace("/USDT", "-USD") if symbol_rt.endswith("/USDT") else symbol_rt
             end_dt = datetime.utcnow()
             start_dt = end_dt - timedelta(days=2)
-            df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
+            df_rt = get_ohlcv_with_cache(yf_symbol, "15m", start_dt, end_dt)
             df_rt = validate_and_fix_chart_data(df_rt)
-            # Normalizar timestamp a tz-aware para overlays HTF si se usan
             if 'timestamp' in df_rt.columns:
                 df_rt['timestamp'] = pd.to_datetime(df_rt['timestamp'], utc=True)
             if df_rt.empty:
-                st.warning("No data available for this symbol.")
+                st.warning(f"No data available for {symbol_rt}. If this is a meme or test coin, data may not be supported by the provider.")
                 continue
             signals_rt = analyze(df_rt)
             fig_rt = create_optimized_chart(df_rt)
-            # --- Añadir overlays igual que en la pestaña principal ---
-            # FVG
+            # Overlays (same as before)
             if show_fvg and "fvg" in signals_rt:
                 fvg_data = signals_rt["fvg"]
                 for i, row in fvg_data.iterrows():
@@ -801,7 +816,6 @@ with tab_realtime:
                                 opacity=0.5
                             )
             # --- SFP Overlay (Real-Time Chart, filtered) ---
-            # Get market structure, FVGs, OBs, CHoCH for RT chart
             market_structure_rt = signals_rt.get('market_structure', 'neutral')
             fvgs_rt = []
             obs_rt = []
@@ -821,7 +835,7 @@ with tab_realtime:
                     {'timestamp': row['timestamp'] if 'timestamp' in row else df_rt.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
                     for i, row in signals_rt['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
                 ]
-            # Mostrar SFP solo si el toggle está activo
+            # SFP detection and overlay
             if show_sfp:
                 sfps_rt = detect_sfps(
                     df_rt,
@@ -830,7 +844,9 @@ with tab_realtime:
                     fvgs=fvgs_rt,
                     obs=obs_rt,
                     choch_list=choch_rt,
-                    require_choch=require_choch_sfp
+                    require_choch=require_choch_sfp,
+                    symbol=symbol_rt,
+                    timeframe="15m"
                 )
                 for sfp in sfps_rt:
                     ts = sfp['timestamp']
@@ -1111,11 +1127,12 @@ with tab_overview:
             bot_analysis = None
     else:
         # Modo tiempo real
+        yf_symbol = symbol.replace("/USDT", "-USD") if symbol.endswith("/USDT") else symbol
         with st.spinner(f"📊 Cargando {data_days} días de datos para {symbol}..."):
             # Usar caché incremental para la carga principal
             end_dt = datetime.utcnow()
             start_dt = end_dt - timedelta(days=data_days)
-            df = get_ohlcv_with_cache(symbol, timeframe, start_dt, end_dt)
+            df = get_ohlcv_with_cache(yf_symbol, timeframe, start_dt, end_dt)
             if len(df) > 0:
                 show_temp_message('success', f"✅ Cargados {len(df)} puntos de datos desde {df['timestamp'].min().strftime('%Y-%m-%d %H:%M')} hasta {df['timestamp'].max().strftime('%Y-%m-%d %H:%M')}")
             else:
@@ -1152,7 +1169,7 @@ with tab_overview:
                         # Usar caché incremental para HTF
                         htf_end = datetime.utcnow()
                         htf_start = htf_end - timedelta(days=data_days)
-                        htf_df = get_ohlcv_with_cache(symbol, htf_timeframe, htf_start, htf_end)
+                        htf_df = get_ohlcv_with_cache(yf_symbol, htf_timeframe, htf_start, htf_end)
                         htf_signals = analyze(htf_df)
                         htf_context = {
                             'trend': htf_signals.get('trend', None),
