@@ -355,44 +355,101 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
     Returns:
         DataFrame con todas las velas en el rango
     """
-    exchange = ccxt.binance()
-    all_ohlcv = []
-    since_ms = int(since.timestamp() * 1000) if isinstance(since, datetime) else since
-    until_ms = int(until.timestamp() * 1000) if isinstance(until, datetime) else until
-    fetch_since = since_ms
-    while True:
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=fetch_since, limit=max_limit)
-        if not ohlcv:
-            break
-        all_ohlcv.extend(ohlcv)
-        last_ts = ohlcv[-1][0]
-        if until_ms and last_ts >= until_ms:
-            break
-        if len(ohlcv) < max_limit:
-            break
-        fetch_since = last_ts + 1
-        time.sleep(sleep_sec)
-    df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    # Force all timestamps to UTC tz-aware
-    if getattr(df['timestamp'].dt, 'tz', None) is None:
-        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-    else:
-        df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
-    # Ensure since/until are UTC tz-aware
-    if since:
-        since_dt = pd.to_datetime(since)
-        if getattr(since_dt, 'tzinfo', None) is None:
-            since_dt = pd.Timestamp(since_dt).tz_localize('UTC')
+    try:
+        exchange = ccxt.binance()
+        all_ohlcv = []
+        since_ms = int(since.timestamp() * 1000) if isinstance(since, datetime) else since
+        until_ms = int(until.timestamp() * 1000) if isinstance(until, datetime) else until
+        fetch_since = since_ms
+        while True:
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=fetch_since, limit=max_limit)
+            if not ohlcv:
+                break
+            all_ohlcv.extend(ohlcv)
+            last_ts = ohlcv[-1][0]
+            if until_ms and last_ts >= until_ms:
+                break
+            if len(ohlcv) < max_limit:
+                break
+            fetch_since = last_ts + 1
+            time.sleep(sleep_sec)
+        df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        # Force all timestamps to UTC tz-aware
+        if getattr(df['timestamp'].dt, 'tz', None) is None:
+            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
         else:
-            since_dt = pd.Timestamp(since_dt).tz_convert('UTC')
-        df = df[df["timestamp"] >= since_dt]
-    if until:
-        until_dt = pd.to_datetime(until)
-        if getattr(until_dt, 'tzinfo', None) is None:
-            until_dt = pd.Timestamp(until_dt).tz_localize('UTC')
+            df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+        # Ensure since/until are UTC tz-aware
+        if since:
+            since_dt = pd.to_datetime(since)
+            if getattr(since_dt, 'tzinfo', None) is None:
+                since_dt = pd.Timestamp(since_dt).tz_localize('UTC')
+            else:
+                since_dt = pd.Timestamp(since_dt).tz_convert('UTC')
+            df = df[df["timestamp"] >= since_dt]
+        if until:
+            until_dt = pd.to_datetime(until)
+            if getattr(until_dt, 'tzinfo', None) is None:
+                until_dt = pd.Timestamp(until_dt).tz_localize('UTC')
+            else:
+                until_dt = pd.Timestamp(until_dt).tz_convert('UTC')
+            df = df[df["timestamp"] <= until_dt]
+        df = df.reset_index(drop=True)
+        return df
+    except Exception as e:
+        print(f"Binance no disponible ({e}), usando yfinance para {symbol}")
+        # Mapeo de tickers para yfinance
+        YFINANCE_TICKER_MAP = {
+            "BTC/USDT": "BTC-USD",
+            "ETH/USDT": "ETH-USD",
+            "SOL/USDT": "SOL-USD",
+            "ADA/USDT": "ADA-USD",
+            "XRP/USDT": "XRP-USD",
+            "DOGE/USDT": "DOGE-USD",
+            "EUR/USD": "EURUSD=X",
+            "GBP/USD": "GBPUSD=X",
+            "XAU/USD": "XAUUSD=X",
+            "SP500": "^GSPC"
+        }
+        yf_ticker = YFINANCE_TICKER_MAP.get(symbol, symbol)
+        # Convertir timeframe a formato yfinance
+        yf_interval_map = {
+            "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "60m", "4h": "240m", "1d": "1d", "1w": "1wk", "1M": "1mo"
+        }
+        yf_interval = yf_interval_map.get(timeframe, "15m")
+        # yfinance requiere fechas en formato datetime
+        start = since if isinstance(since, datetime) else datetime.utcfromtimestamp(since/1000)
+        end = until if isinstance(until, datetime) else datetime.utcfromtimestamp(until/1000)
+        import yfinance as yf
+        data = yf.download(yf_ticker, start=start, end=end, interval=yf_interval, progress=False)
+        if data.empty:
+            print(f"⚠️ Yahoo Finance no devolvió datos para {symbol} en {timeframe}")
+            return pd.DataFrame()
+        # Normalización robusta
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = ['_'.join([str(i) for i in col if i]) for col in data.columns.values]
+        data.columns = [str(col).lower() for col in data.columns]
+        data = data.reset_index()
+        if 'datetime' in data.columns:
+            data['timestamp'] = pd.to_datetime(data['datetime'])
+        elif 'date' in data.columns:
+            data['timestamp'] = pd.to_datetime(data['date'])
+        elif 'index' in data.columns:
+            data['timestamp'] = pd.to_datetime(data['index'])
         else:
-            until_dt = pd.Timestamp(until_dt).tz_convert('UTC')
-        df = df[df["timestamp"] <= until_dt]
-    df = df.reset_index(drop=True)
-    return df
+            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce')
+        for col in ['open', 'high', 'low', 'close']:
+            if col not in data.columns:
+                candidates = [c for c in data.columns if c.startswith(col)]
+                if candidates:
+                    data[col] = data[candidates[0]]
+        if 'volume' not in data.columns:
+            data['volume'] = 0.0
+        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        missing = [col for col in ['open', 'high', 'low', 'close'] if col not in data.columns]
+        if missing:
+            print(f"❌ Faltan columnas requeridas de precios en Yahoo Finance para {symbol}: {missing}")
+            print(f"[DEBUG] Columnas disponibles: {list(data.columns)}")
+            return pd.DataFrame()
+        return data[required_cols]
