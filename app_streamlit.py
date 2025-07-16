@@ -150,7 +150,7 @@ def detect_sfps(
         if isinstance(idxs, pd.RangeIndex):
             return i
         else:
-            return idxs[i]
+            return idxs.iloc[i]
 
     for i in range(1, len(df) - 1):
         prev, curr, next_ = df.iloc[i - 1], df.iloc[i], df.iloc[i + 1]
@@ -490,6 +490,8 @@ show_ob = st.sidebar.checkbox("Order Blocks", value=True)
 show_liq = st.sidebar.checkbox("Liquidity", value=True)
 show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
 show_swings = st.sidebar.checkbox("Swings", value=True)
+# Toggle para SFP
+show_sfp = st.sidebar.checkbox("SFP (Swing Failure Patterns)", value=True)
 
 # --- HTF CONTROLS ---
 st.sidebar.markdown("### HTF Overlays & Alerts")
@@ -585,6 +587,9 @@ with tab_realtime:
             start_dt = end_dt - timedelta(days=2)
             df_rt = get_ohlcv_with_cache(symbol_rt, "15m", start_dt, end_dt)
             df_rt = validate_and_fix_chart_data(df_rt)
+            # Normalizar timestamp a tz-aware para overlays HTF si se usan
+            if 'timestamp' in df_rt.columns:
+                df_rt['timestamp'] = pd.to_datetime(df_rt['timestamp'], utc=True)
             if df_rt.empty:
                 st.warning("No data available for this symbol.")
                 continue
@@ -592,7 +597,7 @@ with tab_realtime:
             fig_rt = create_optimized_chart(df_rt)
             # --- Añadir overlays igual que en la pestaña principal ---
             # FVG
-            if "fvg" in signals_rt:
+            if show_fvg and "fvg" in signals_rt:
                 fvg_data = signals_rt["fvg"]
                 for i, row in fvg_data.iterrows():
                     if pd.notna(row["FVG"]):
@@ -619,122 +624,116 @@ with tab_realtime:
                                 bordercolor=color,
                                 borderwidth=1
                                 )
-                # Order Blocks
-                if "orderblocks" in signals_rt:
-                    ob_data = signals_rt["orderblocks"]
-                    for i, row in ob_data.iterrows():
-                        if pd.notna(row["OB"]):
-                            is_bullish = row["OB"] == 1
-                            color = '#4CAF50' if is_bullish else '#F44336'
-                            fig_rt.add_shape(
-                                type="rect",
-                                x0=df_rt.iloc[i]["timestamp"],
-                                x1=df_rt.iloc[min(i+12, len(df_rt)-1)]["timestamp"],
-                                y0=row["Bottom"],
-                                y1=row["Top"],
-                                fillcolor=color,
-                                opacity=0.2,
-                                line=dict(color=color, width=2)
-                            )
-                            fig_rt.add_annotation(
-                                x=df_rt.iloc[min(i+3, len(df_rt)-1)]["timestamp"],
-                                y=(row["Top"] + row["Bottom"]) / 2,
-                                text="OB",
-                                showarrow=False,
-                                font=dict(size=12, color="white", family="Arial Black"),
-                                bgcolor=color,
-                                bordercolor=color,
-                                borderwidth=1
-                            )
-                # BOS/CHoCH
-                if "bos_choch" in signals_rt:
-                    bos_choch_data = signals_rt["bos_choch"]
-                    for i, row in bos_choch_data.iterrows():
-                        val = row.get("Signal", row.get("BOS", row.get("CHoCH", None)))
-                        if pd.notna(val):
-                            label = "BOS" if "BOS" in str(val) else "CHoCH"
+            if show_ob and "orderblocks" in signals_rt:
+                ob_data = signals_rt["orderblocks"]
+                for i, row in ob_data.iterrows():
+                    if pd.notna(row["OB"]):
+                        is_bullish = row["OB"] == 1
+                        color = '#4CAF50' if is_bullish else '#F44336'
+                        fig_rt.add_shape(
+                            type="rect",
+                            x0=df_rt.iloc[i]["timestamp"],
+                            x1=df_rt.iloc[min(i+12, len(df_rt)-1)]["timestamp"],
+                            y0=row["Bottom"],
+                            y1=row["Top"],
+                            fillcolor=color,
+                            opacity=0.2,
+                            line=dict(color=color, width=2)
+                        )
+                        fig_rt.add_annotation(
+                            x=df_rt.iloc[min(i+3, len(df_rt)-1)]["timestamp"],
+                            y=(row["Top"] + row["Bottom"]) / 2,
+                            text="OB",
+                            showarrow=False,
+                            font=dict(size=12, color="white", family="Arial Black"),
+                            bgcolor=color,
+                            bordercolor=color,
+                            borderwidth=1
+                        )
+            if show_bos and "bos_choch" in signals_rt:
+                bos_choch_data = signals_rt["bos_choch"]
+                for i, row in bos_choch_data.iterrows():
+                    val = row.get("Signal", row.get("BOS", row.get("CHoCH", None)))
+                    if pd.notna(val):
+                        label = "BOS" if "BOS" in str(val) else "CHoCH"
+                        fig_rt.add_shape(
+                            type="line",
+                            x0=df_rt.iloc[i]["timestamp"],
+                            x1=df_rt.iloc[i]["timestamp"],
+                            y0=df_rt.iloc[i]["low"] * 0.999,
+                            y1=df_rt.iloc[i]["high"] * 1.001,
+                            line=dict(color="#9C27B0", width=3, dash="dash")
+                        )
+                        fig_rt.add_annotation(
+                            x=df_rt.iloc[i]["timestamp"],
+                            y=df_rt.iloc[i]["high"] * 1.002,
+                            text=label,
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=2,
+                            arrowcolor="#9C27B0",
+                            font=dict(size=10, color="white", family="Arial Black"),
+                            bgcolor="#9C27B0",
+                            bordercolor="#9C27B0",
+                            borderwidth=1
+                        )
+            if show_liq and "liquidity" in signals_rt:
+                liq_data = signals_rt["liquidity"]
+                if liq_data is not None:
+                    for i, row in liq_data.iterrows():
+                        trigger = row.get("Sweep", row.get("Liquidity", None))
+                        if pd.notna(trigger):
+                            price = row.get("Price", row.get("Level", df_rt.iloc[i]["high"]))
                             fig_rt.add_shape(
                                 type="line",
+                                x0=df_rt.iloc[max(0, i-5)]["timestamp"],
+                                x1=df_rt.iloc[min(i+5, len(df_rt)-1)]["timestamp"],
+                                y0=price,
+                                y1=price,
+                                line=dict(color="#FFD700", width=2, dash="solid")
+                            )
+            if show_swings and "swing_highs_lows" in signals_rt:
+                swing_data = signals_rt.get("swing_highs_lows", None)
+                if swing_data is not None and hasattr(swing_data, 'iterrows'):
+                    for i, row in swing_data.iterrows():
+                        highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
+                        if pd.notna(highlow):
+                            color = "#00BFFF" if highlow == "high" else "#FF8C00"
+                            fig_rt.add_shape(
+                                type="circle",
+                                xref="x", yref="y",
                                 x0=df_rt.iloc[i]["timestamp"],
                                 x1=df_rt.iloc[i]["timestamp"],
-                                y0=df_rt.iloc[i]["low"] * 0.999,
-                                y1=df_rt.iloc[i]["high"] * 1.001,
-                                line=dict(color="#9C27B0", width=3, dash="dash")
+                                y0=df_rt.iloc[i]["high"] * 1.001 if highlow == "high" else df_rt.iloc[i]["low"] * 0.999,
+                                y1=df_rt.iloc[i]["high"] * 1.002 if highlow == "high" else df_rt.iloc[i]["low"] * 0.998,
+                                line=dict(color=color, width=2),
+                                fillcolor=color,
+                                opacity=0.5
                             )
-                            fig_rt.add_annotation(
-                                x=df_rt.iloc[i]["timestamp"],
-                                y=df_rt.iloc[i]["high"] * 1.002,
-                                text=label,
-                                showarrow=True,
-                                arrowhead=2,
-                                arrowsize=1,
-                                arrowwidth=2,
-                                arrowcolor="#9C27B0",
-                                font=dict(size=10, color="white", family="Arial Black"),
-                                bgcolor="#9C27B0",
-                                bordercolor="#9C27B0",
-                                borderwidth=1
-                            )
-                # Liquidity
-                if "liquidity" in signals_rt:
-                    liq_data = signals_rt["liquidity"]
-                    if liq_data is not None:
-                        for i, row in liq_data.iterrows():
-                            trigger = row.get("Sweep", row.get("Liquidity", None))
-                            if pd.notna(trigger):
-                                price = row.get("Price", row.get("Level", df_rt.iloc[i]["high"]))
-                                fig_rt.add_shape(
-                                    type="line",
-                                    x0=df_rt.iloc[max(0, i-5)]["timestamp"],
-                                    x1=df_rt.iloc[min(i+5, len(df_rt)-1)]["timestamp"],
-                                    y0=price,
-                                    y1=price,
-                                    line=dict(color="#FFD700", width=2, dash="solid")
-                                )
-                # Swings
-                if "swing_highs_lows" in signals_rt:
-                    swing_data = signals_rt.get("swing_highs_lows", None)
-                    if swing_data is not None and hasattr(swing_data, 'iterrows'):
-                        for i, row in swing_data.iterrows():
-                            highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
-                            if pd.notna(highlow):
-                                # Puedes personalizar el color/forma según tipo de swing
-                                color = "#00BFFF" if highlow == "high" else "#FF8C00"
-                                fig_rt.add_shape(
-                                    type="circle",
-                                    xref="x", yref="y",
-                                    x0=df_rt.iloc[i]["timestamp"],
-                                    x1=df_rt.iloc[i]["timestamp"],
-                                    y0=df_rt.iloc[i]["high"] * 1.001 if highlow == "high" else df_rt.iloc[i]["low"] * 0.999,
-                                    y1=df_rt.iloc[i]["high"] * 1.002 if highlow == "high" else df_rt.iloc[i]["low"] * 0.998,
-                                    line=dict(color=color, width=2),
-                                    fillcolor=color,
-                                    opacity=0.5
-                                )
-                # --- SFP Overlay (Real-Time Chart, filtered) ---
-                # Get market structure, FVGs, OBs, CHoCH for RT chart
-                market_structure_rt = 'neutral'
-                fvgs_rt = []
-                obs_rt = []
-                choch_rt = []
-                # Try to extract from signals_rt if available
-                if 'market_structure' in signals_rt:
-                    market_structure_rt = signals_rt['market_structure']
-                if 'fvg' in signals_rt and hasattr(signals_rt['fvg'], 'iterrows'):
-                    fvgs_rt = [
-                        {'mid': (row['Top'] + row['Bottom']) / 2}
-                        for _, row in signals_rt['fvg'].iterrows() if pd.notna(row.get('FVG', None))
-                    ]
-                if 'orderblocks' in signals_rt and hasattr(signals_rt['orderblocks'], 'iterrows'):
-                    obs_rt = [
-                        {'mid': (row['Top'] + row['Bottom']) / 2}
-                        for _, row in signals_rt['orderblocks'].iterrows() if pd.notna(row.get('OB', None))
-                    ]
-                if 'bos_choch' in signals_rt and hasattr(signals_rt['bos_choch'], 'iterrows'):
-                    choch_rt = [
-                        {'timestamp': row['timestamp'] if 'timestamp' in row else df_rt.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
-                        for i, row in signals_rt['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
-                    ]
+            # --- SFP Overlay (Real-Time Chart, filtered) ---
+            # Get market structure, FVGs, OBs, CHoCH for RT chart
+            market_structure_rt = signals_rt.get('market_structure', 'neutral')
+            fvgs_rt = []
+            obs_rt = []
+            choch_rt = []
+            if 'fvg' in signals_rt and hasattr(signals_rt['fvg'], 'iterrows'):
+                fvgs_rt = [
+                    {'mid': (row['Top'] + row['Bottom']) / 2}
+                    for _, row in signals_rt['fvg'].iterrows() if pd.notna(row.get('FVG', None))
+                ]
+            if 'orderblocks' in signals_rt and hasattr(signals_rt['orderblocks'], 'iterrows'):
+                obs_rt = [
+                    {'mid': (row['Top'] + row['Bottom']) / 2}
+                    for _, row in signals_rt['orderblocks'].iterrows() if pd.notna(row.get('OB', None))
+                ]
+            if 'bos_choch' in signals_rt and hasattr(signals_rt['bos_choch'], 'iterrows'):
+                choch_rt = [
+                    {'timestamp': row['timestamp'] if 'timestamp' in row else df_rt.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
+                    for i, row in signals_rt['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
+                ]
+            # Mostrar SFP solo si el toggle está activo
+            if show_sfp:
                 sfps_rt = detect_sfps(
                     df_rt,
                     lookback=200,
@@ -742,7 +741,7 @@ with tab_realtime:
                     fvgs=fvgs_rt,
                     obs=obs_rt,
                     choch_list=choch_rt,
-                    require_choch=False
+                    require_choch=require_choch_sfp
                 )
                 for sfp in sfps_rt:
                     ts = sfp['timestamp']
@@ -776,7 +775,7 @@ with tab_realtime:
                             bordercolor="#F44336",
                             borderwidth=1
                         )
-                st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
+            st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
 with tab_example:
     st.header("Visual Example: SMC Simplified by TJR Strategy (LONG and SHORT)")
     st.markdown("""
@@ -1124,6 +1123,9 @@ with tab_overview:
 
     # Usar datos validados para el resto del análisis
     df = df_fixed
+    # Normalizar timestamp a tz-aware para overlays HTF si se usan
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
 
 
     # Crear gráfico base con estilo TradingView
@@ -1196,6 +1198,71 @@ with tab_overview:
         # Mostrar overlays HTF en cualquier timeframe <= 4h
         ltf_valid = ["1m", "5m", "15m", "1h", "4h"]
         new_htf_alerts = []
+        # Ejemplo: Normalizar timestamp en df_htf si existe
+        # if 'df_htf' in locals() and 'timestamp' in df_htf.columns:
+        #     df_htf['timestamp'] = pd.to_datetime(df_htf['timestamp'], utc=True)
+        # --- SFP Overlay (pestaña principal) ---
+        market_structure_main = signals.get('market_structure', 'neutral')
+        fvgs_main = []
+        obs_main = []
+        choch_main = []
+        if 'fvg' in signals and hasattr(signals['fvg'], 'iterrows'):
+            fvgs_main = [
+                {'mid': (row['Top'] + row['Bottom']) / 2}
+                for _, row in signals['fvg'].iterrows() if pd.notna(row.get('FVG', None))
+            ]
+        if 'orderblocks' in signals and hasattr(signals['orderblocks'], 'iterrows'):
+            obs_main = [
+                {'mid': (row['Top'] + row['Bottom']) / 2}
+                for _, row in signals['orderblocks'].iterrows() if pd.notna(row.get('OB', None))
+            ]
+        if 'bos_choch' in signals and hasattr(signals['bos_choch'], 'iterrows'):
+            choch_main = [
+                {'timestamp': row['timestamp'] if 'timestamp' in row else df.iloc[i]['timestamp'], 'type': row.get('Signal', row.get('BOS', row.get('CHoCH', '')))}
+                for i, row in signals['bos_choch'].iterrows() if pd.notna(row.get('Signal', row.get('BOS', row.get('CHoCH', None))))
+            ]
+        if show_sfp:
+            sfps_main = detect_sfps(
+                df,
+                lookback=200,
+                market_structure=market_structure_main,
+                fvgs=fvgs_main,
+                obs=obs_main,
+                choch_list=choch_main,
+                require_choch=require_choch_sfp
+            )
+            for sfp in sfps_main:
+                ts = sfp['timestamp']
+                if 'Bullish' in sfp['type']:
+                    fig.add_annotation(
+                        x=ts,
+                        y=sfp['swept_level'],
+                        text="🟢 SFP",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1.2,
+                        arrowwidth=2,
+                        arrowcolor="#26A69A",
+                        font=dict(size=11, color="#26A69A", family="Arial Black"),
+                        bgcolor="#232323",
+                        bordercolor="#26A69A",
+                        borderwidth=1
+                    )
+                elif 'Bearish' in sfp['type']:
+                    fig.add_annotation(
+                        x=ts,
+                        y=sfp['swept_level'],
+                        text="🔴 SFP",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1.2,
+                        arrowwidth=2,
+                        arrowcolor="#F44336",
+                        font=dict(size=11, color="#F44336", family="Arial Black"),
+                        bgcolor="#232323",
+                        bordercolor="#F44336",
+                        borderwidth=1
+                    )
         if show_htf_zones and timeframe in ltf_valid:
             for htf in htf_timeframes:
                 try:

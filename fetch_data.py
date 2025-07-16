@@ -374,26 +374,13 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
             fetch_since = last_ts + 1
             time.sleep(sleep_sec)
         df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        # Force all timestamps to UTC tz-aware
-        if getattr(df['timestamp'].dt, 'tz', None) is None:
-            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-        else:
-            df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
-        # Ensure since/until are UTC tz-aware
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        # Filtrar usando timestamps UTC tz-aware
         if since:
-            since_dt = pd.to_datetime(since)
-            if getattr(since_dt, 'tzinfo', None) is None:
-                since_dt = pd.Timestamp(since_dt).tz_localize('UTC')
-            else:
-                since_dt = pd.Timestamp(since_dt).tz_convert('UTC')
+            since_dt = pd.to_datetime(since, utc=True)
             df = df[df["timestamp"] >= since_dt]
         if until:
-            until_dt = pd.to_datetime(until)
-            if getattr(until_dt, 'tzinfo', None) is None:
-                until_dt = pd.Timestamp(until_dt).tz_localize('UTC')
-            else:
-                until_dt = pd.Timestamp(until_dt).tz_convert('UTC')
+            until_dt = pd.to_datetime(until, utc=True)
             df = df[df["timestamp"] <= until_dt]
         df = df.reset_index(drop=True)
         return df
@@ -432,13 +419,20 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         data.columns = [str(col).lower() for col in data.columns]
         data = data.reset_index()
         if 'datetime' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['datetime'])
+            data['timestamp'] = pd.to_datetime(data['datetime'], utc=True)
         elif 'date' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['date'])
+            data['timestamp'] = pd.to_datetime(data['date'], utc=True)
         elif 'index' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['index'])
+            data['timestamp'] = pd.to_datetime(data['index'], utc=True)
         else:
-            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce')
+            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce', utc=True)
+        # Filtrar usando timestamps UTC tz-aware
+        if since:
+            since_dt = pd.to_datetime(since, utc=True)
+            data = data[data["timestamp"] >= since_dt]
+        if until:
+            until_dt = pd.to_datetime(until, utc=True)
+            data = data[data["timestamp"] <= until_dt]
         for col in ['open', 'high', 'low', 'close']:
             if col not in data.columns:
                 candidates = [c for c in data.columns if c.startswith(col)]
