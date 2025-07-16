@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+# --- APP START/END TELEGRAM ALERTS ---
 import time
 from datetime import datetime, timedelta
 import requests
@@ -21,6 +22,12 @@ def send_telegram_alert(message: str):
             print(f"[TELEGRAM][ERROR] {resp.text}")
     except Exception as e:
         print(f"[TELEGRAM][EXC] {e}")
+
+# Send Telegram alert when app starts (after function is defined)
+try:
+    send_telegram_alert("🚀 SMC Streamlit app has started running.")
+except Exception as e:
+    print(f"[TELEGRAM][START][EXC] {e}")
 from typing import Dict, List, Optional
 from fetch_data import get_ohlcv, get_ohlcv_extended, get_ohlcv_with_cache
 from smc_analysis import analyze, get_current_session, get_session_color
@@ -570,6 +577,15 @@ show_historical_charts = st.sidebar.checkbox("Historical Charts", value=False, h
 tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, tab_realtime = st.tabs([
     "Market Overview", "Setups & Confluences", "Signals & Trading", "Backtesting & History", "Configuration", "Visual Example", "Real-Time Multi-Chart"
 ])
+
+# Register app end alert (when Streamlit script finishes)
+import atexit
+def send_app_end_alert():
+    try:
+        send_telegram_alert("🛑 SMC Streamlit app has stopped running.")
+    except Exception as e:
+        print(f"[TELEGRAM][END][EXC] {e}")
+atexit.register(send_app_end_alert)
 
 # --- NUEVA PESTAÑA: TIEMPO REAL MULTI-CHART ---
 with tab_realtime:
