@@ -23,11 +23,12 @@ def send_telegram_alert(message: str):
     except Exception as e:
         print(f"[TELEGRAM][EXC] {e}")
 
-# Send Telegram alert when app starts (after function is defined)
-try:
-    send_telegram_alert("🚀 SMC Streamlit app has started running.")
-except Exception as e:
-    print(f"[TELEGRAM][START][EXC] {e}")
+if "telegram_start_sent" not in st.session_state:
+    try:
+        send_telegram_alert("🚀 SMC Streamlit app has started running.")
+    except Exception as e:
+        print(f"[TELEGRAM][START][EXC] {e}")
+    st.session_state["telegram_start_sent"] = True
 from typing import Dict, List, Optional
 from fetch_data import get_ohlcv, get_ohlcv_extended, get_ohlcv_with_cache
 from smc_analysis import analyze, get_current_session, get_session_color
