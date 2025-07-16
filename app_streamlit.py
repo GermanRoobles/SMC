@@ -485,93 +485,165 @@ def display_trade_signals(trade_analysis: Dict):
 # --- Overlays toggles ---
 #############################
 
-# st.sidebar.markdown("### Overlays a mostrar")
+
+# --- Responsive controls: sidebar for PC, top controls for mobile ---
 st.set_page_config(layout="wide", page_title="SMC - Panal")
 st.title("📊 SMC - Panal")
 
+# Detect mobile by screen width (Streamlit workaround)
+import streamlit as st
+query_params = st.query_params
+screen_width = int(query_params.get("w", ["0"])[0]) if "w" in query_params else None
 
-# --- SIDEBAR CONTROLS (ENGLISH) ---
-st.sidebar.markdown("### Overlays to show")
-show_fvg = st.sidebar.checkbox("FVG (Fair Value Gaps)", value=True)
-show_ob = st.sidebar.checkbox("Order Blocks", value=True)
-show_liq = st.sidebar.checkbox("Liquidity", value=True)
-show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
-show_swings = st.sidebar.checkbox("Swings", value=True)
-# Toggle para SFP
-show_sfp = st.sidebar.checkbox("SFP (Swing Failure Patterns)", value=True)
+def is_mobile():
+    # If width is not available, fallback to user agent (not always possible)
+    if screen_width and screen_width < 800:
+        return True
+    # Fallback: try to detect mobile from user agent
+    import os
+    user_agent = os.environ.get("HTTP_USER_AGENT", "")
+    if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
+        return True
+    return False
 
-# --- HTF CONTROLS ---
-st.sidebar.markdown("### HTF Overlays & Alerts")
-show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
-enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
-htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
-
-# --- SFP CHoCH FILTER CONTROL ---
-require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
-
-# st.set_page_config(layout="wide", page_title="Smart Money Concepts - TradingView Style 1")
-# st.title("📊 Smart Money Concepts - TradingView Style 2")
-
-symbol = st.sidebar.selectbox("Symbol", [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
-    "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
-])
-timeframe = st.sidebar.selectbox(
-    "Timeframe",
-    ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
-    index=2
-)
-# Data range up to 365 days (1 year)
-data_days = st.sidebar.selectbox(
-    "Data days",
-    [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
-    index=5
-)
-refresh_interval = st.sidebar.selectbox("Refresh interval (sec)", [0, 30, 60, 120], index=0)
-bot_enabled = st.sidebar.checkbox("Enable SMC Bot", value=True)
-show_signals = st.sidebar.checkbox("Show Signals", value=True)
-show_bot_metrics = st.sidebar.checkbox("Show Metrics", value=True)
-trade_engine_enabled = st.sidebar.checkbox("Enable Trading Engine", value=False)
-# --- HTF CONTEXT ---
-htf_enabled = st.sidebar.checkbox("Use HTF context", value=False, help="Filter signals according to higher timeframe context")
-htf_timeframe = st.sidebar.selectbox("HTF Timeframe", ["1h", "2h", "4h", "1d", "1w", "1M"], index=2, help="Higher timeframe for HTF context") if htf_enabled else None
-if trade_engine_enabled:
-    min_risk_reward = st.sidebar.slider("Minimum Risk/Reward", 1.5, 5.0, 2.0, 0.5)
-    max_risk_percent = st.sidebar.slider("Maximum Risk (%)", 0.5, 5.0, 1.0, 0.5)
-    show_trade_signals = st.sidebar.checkbox("Show Trading Signals", value=True)
-    show_trade_stats = st.sidebar.checkbox("Show Trading Stats", value=True)
-backtesting_enabled = st.sidebar.checkbox("Enable Backtesting", value=False)
-if backtesting_enabled:
-    initial_capital = st.sidebar.number_input("Initial Capital ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
-    risk_per_trade = st.sidebar.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
-    show_backtest_chart = st.sidebar.checkbox("Show Performance Chart", value=True)
-    show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
-
-# --- OPEN INTEREST CONTROL ---
-show_open_interest = st.sidebar.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
-
-# Historical configuration
-st.sidebar.markdown("### 📅 Historical Analysis")
-enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
-historical_period = st.sidebar.selectbox(
-    "Historical Period",
-    options=[
-        ("1 Hour", HistoricalPeriod.HOUR_1),
-        ("4 Hours", HistoricalPeriod.HOURS_4),
-        ("12 Hours", HistoricalPeriod.HOURS_12),
-        ("1 Day", HistoricalPeriod.DAY_1),
-        ("3 Days", HistoricalPeriod.DAYS_3),
-        ("1 Week", HistoricalPeriod.WEEK_1),
-        ("2 Weeks", HistoricalPeriod.WEEKS_2),
-        ("1 Month", HistoricalPeriod.MONTH_1)
-    ],
-    format_func=lambda x: x[0],
-    index=3,  # Default: 1 Day
-    help="Historical period for analysis"
-)
-
-show_future_signals = st.sidebar.checkbox("Show Future Signals", value=False, help="Preview of future signals (only in historical mode)")
-show_historical_charts = st.sidebar.checkbox("Historical Charts", value=False, help="Show historical evolution charts")
+if is_mobile():
+    # Controls in main body (top)
+    with st.expander("🔧 Controles principales", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            symbol = st.selectbox("Symbol", [
+                "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+                "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
+            ])
+            timeframe = st.selectbox(
+                "Timeframe",
+                ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
+                index=2
+            )
+            data_days = st.selectbox(
+                "Data days",
+                [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
+                index=5
+            )
+        with col2:
+            st.markdown("### Overlays to show")
+            show_fvg = st.checkbox("FVG (Fair Value Gaps)", value=True)
+            show_ob = st.checkbox("Order Blocks", value=True)
+            show_liq = st.checkbox("Liquidity", value=True)
+            show_bos = st.checkbox("BOS/CHoCH", value=True)
+            show_swings = st.checkbox("Swings", value=True)
+            show_sfp = st.checkbox("SFP (Swing Failure Patterns)", value=True)
+        with col3:
+            st.markdown("### Bot & Backtest")
+            bot_enabled = st.checkbox("Enable SMC Bot", value=True)
+            show_signals = st.checkbox("Show Signals", value=True)
+            show_bot_metrics = st.checkbox("Show Metrics", value=True)
+            trade_engine_enabled = st.checkbox("Enable Trading Engine", value=False)
+            htf_enabled = st.checkbox("Use HTF context", value=False, help="Filter signals according to higher timeframe context")
+            htf_timeframe = st.selectbox("HTF Timeframe", ["1h", "2h", "4h", "1d", "1w", "1M"], index=2, help="Higher timeframe for HTF context") if htf_enabled else None
+            if trade_engine_enabled:
+                min_risk_reward = st.slider("Minimum Risk/Reward", 1.5, 5.0, 2.0, 0.5)
+                max_risk_percent = st.slider("Maximum Risk (%)", 0.5, 5.0, 1.0, 0.5)
+                show_trade_signals = st.checkbox("Show Trading Signals", value=True)
+                show_trade_stats = st.checkbox("Show Trading Stats", value=True)
+            backtesting_enabled = st.checkbox("Enable Backtesting", value=False)
+            if backtesting_enabled:
+                initial_capital = st.number_input("Initial Capital ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
+                risk_per_trade = st.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
+                show_backtest_chart = st.checkbox("Show Performance Chart", value=True)
+                show_backtest_report = st.checkbox("Show Detailed Report", value=True)
+            show_open_interest = st.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
+            st.markdown("### 📅 Historical Analysis")
+            enable_historical = st.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
+            historical_period = st.selectbox(
+                "Historical Period",
+                options=[
+                    ("1 Hour", HistoricalPeriod.HOUR_1),
+                    ("4 Hours", HistoricalPeriod.HOURS_4),
+                    ("12 Hours", HistoricalPeriod.HOURS_12),
+                    ("1 Day", HistoricalPeriod.DAY_1),
+                    ("3 Days", HistoricalPeriod.DAYS_3),
+                    ("1 Week", HistoricalPeriod.WEEK_1),
+                    ("2 Weeks", HistoricalPeriod.WEEKS_2),
+                    ("1 Month", HistoricalPeriod.MONTH_1)
+                ],
+                format_func=lambda x: x[0],
+                index=3,
+                help="Historical period for analysis"
+            )
+            show_future_signals = st.checkbox("Show Future Signals", value=False, help="Preview of future signals (only in historical mode)")
+            show_historical_charts = st.checkbox("Historical Charts", value=False, help="Show historical evolution charts")
+            require_choch_sfp = st.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
+            show_htf_zones = st.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
+            enable_htf_alerts = st.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
+            htf_timeframes = st.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
+else:
+    # PC: sidebar controls as before
+    st.sidebar.markdown("### Overlays to show")
+    show_fvg = st.sidebar.checkbox("FVG (Fair Value Gaps)", value=True)
+    show_ob = st.sidebar.checkbox("Order Blocks", value=True)
+    show_liq = st.sidebar.checkbox("Liquidity", value=True)
+    show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
+    show_swings = st.sidebar.checkbox("Swings", value=True)
+    show_sfp = st.sidebar.checkbox("SFP (Swing Failure Patterns)", value=True)
+    st.sidebar.markdown("### HTF Overlays & Alerts")
+    show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
+    enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
+    htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
+    require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
+    symbol = st.sidebar.selectbox("Symbol", [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+        "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
+    ])
+    timeframe = st.sidebar.selectbox(
+        "Timeframe",
+        ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
+        index=2
+    )
+    data_days = st.sidebar.selectbox(
+        "Data days",
+        [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
+        index=5
+    )
+    refresh_interval = st.sidebar.selectbox("Refresh interval (sec)", [0, 30, 60, 120], index=0)
+    bot_enabled = st.sidebar.checkbox("Enable SMC Bot", value=True)
+    show_signals = st.sidebar.checkbox("Show Signals", value=True)
+    show_bot_metrics = st.sidebar.checkbox("Show Metrics", value=True)
+    trade_engine_enabled = st.sidebar.checkbox("Enable Trading Engine", value=False)
+    htf_enabled = st.sidebar.checkbox("Use HTF context", value=False, help="Filter signals according to higher timeframe context")
+    htf_timeframe = st.sidebar.selectbox("HTF Timeframe", ["1h", "2h", "4h", "1d", "1w", "1M"], index=2, help="Higher timeframe for HTF context") if htf_enabled else None
+    if trade_engine_enabled:
+        min_risk_reward = st.sidebar.slider("Minimum Risk/Reward", 1.5, 5.0, 2.0, 0.5)
+        max_risk_percent = st.sidebar.slider("Maximum Risk (%)", 0.5, 5.0, 1.0, 0.5)
+        show_trade_signals = st.sidebar.checkbox("Show Trading Signals", value=True)
+        show_trade_stats = st.sidebar.checkbox("Show Trading Stats", value=True)
+    backtesting_enabled = st.sidebar.checkbox("Enable Backtesting", value=False)
+    if backtesting_enabled:
+        initial_capital = st.sidebar.number_input("Initial Capital ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
+        risk_per_trade = st.sidebar.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
+        show_backtest_chart = st.sidebar.checkbox("Show Performance Chart", value=True)
+        show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
+    show_open_interest = st.sidebar.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
+    st.sidebar.markdown("### 📅 Historical Analysis")
+    enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
+    historical_period = st.sidebar.selectbox(
+        "Historical Period",
+        options=[
+            ("1 Hour", HistoricalPeriod.HOUR_1),
+            ("4 Hours", HistoricalPeriod.HOURS_4),
+            ("12 Hours", HistoricalPeriod.HOURS_12),
+            ("1 Day", HistoricalPeriod.DAY_1),
+            ("3 Days", HistoricalPeriod.DAYS_3),
+            ("1 Week", HistoricalPeriod.WEEK_1),
+            ("2 Weeks", HistoricalPeriod.WEEKS_2),
+            ("1 Month", HistoricalPeriod.MONTH_1)
+        ],
+        format_func=lambda x: x[0],
+        index=3,
+        help="Historical period for analysis"
+    )
+    show_future_signals = st.sidebar.checkbox("Show Future Signals", value=False, help="Preview of future signals (only in historical mode)")
+    show_historical_charts = st.sidebar.checkbox("Historical Charts", value=False, help="Show historical evolution charts")
 
 # --- MAIN TABS (ENGLISH) ---
 tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, tab_realtime = st.tabs([
