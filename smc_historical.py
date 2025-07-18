@@ -60,9 +60,10 @@ class SMCHistoricalManager:
             # Crear subdirectorios para cada símbolo
             symbol_dir = os.path.join(self.cache_dir, symbol.replace('/', '_'))
             os.makedirs(symbol_dir, exist_ok=True)
-            print(f"📁 Cache directory creado: {symbol_dir}")
+            # print(f"📁 Cache directory creado: {symbol_dir}")
         except Exception as e:
-            print(f"⚠️ Error creando directorio cache: {e}")
+            # print(f"⚠️ Error creando directorio cache: {e}")
+            pass
 
         # Configuración de períodos históricos
         self.period_configs = {
@@ -103,16 +104,16 @@ class SMCHistoricalManager:
         config = self.period_configs[period]
         start_time = end_time - config["delta"]
 
-        print(f"📊 Obteniendo datos históricos desde {start_time} hasta {end_time}")
+        # print(f"📊 Obteniendo datos históricos desde {start_time} hasta {end_time}")
 
         try:
             from fetch_data import get_ohlcv_full
             # Descargar todas las velas necesarias para el rango
             df = get_ohlcv_full(self.symbol, self.timeframe, since=start_time, until=end_time)
-            print(f"   ✅ Obtenidos {len(df)} puntos de datos (full range)")
+            # print(f"   ✅ Obtenidos {len(df)} puntos de datos (full range)")
             return df
         except Exception as e:
-            print(f"   ❌ Error obteniendo datos históricos: {e}")
+            # print(f"   ❌ Error obteniendo datos históricos: {e}")
             return pd.DataFrame()
 
     def create_historical_snapshot(self, target_time: datetime, period) -> Optional[HistoricalSnapshot]:
@@ -132,18 +133,18 @@ class SMCHistoricalManager:
 
             min_required = 10  # Mínimo de velas para considerar válido el snapshot
             if df.empty or len(df) < min_required:
-                print(f"❌ No hay suficientes datos para {target_time} (obtenidos: {len(df)})")
+                # print(f"❌ No hay suficientes datos para {target_time} (obtenidos: {len(df)})")
                 # Intentar buscar el dato más cercano anterior si el rango está vacío
                 if not df.empty:
                     # Buscar el último dato anterior al rango
                     last_row = df.iloc[[-1]]
-                    print(f"   ⚠️ Usando último dato disponible anterior para snapshot: {last_row['timestamp'].values[0]}")
+                    # print(f"   ⚠️ Usando último dato disponible anterior para snapshot: {last_row['timestamp'].values[0]}")
                     df = last_row
                 else:
                     return None
 
             # Realizar análisis SMC para ese momento
-            print(f"🤖 Analizando condiciones del mercado en {target_time}")
+            # print(f"🤖 Analizando condiciones del mercado en {target_time}")
             bot_analysis = get_smc_bot_analysis(df)
 
             # Extraer señales
@@ -163,25 +164,14 @@ class SMCHistoricalManager:
                 timeframe=self.timeframe
             )
 
-            print(f"   ✅ Snapshot creado con {len(signals)} señales")
+            # print(f"   ✅ Snapshot creado con {len(signals)} señales")
 
-            print("\nIndicadores generados en ese punto histórico:")
-            # Mostrar resumen de indicadores clave
-            for key in ["trend", "fvg", "orderblocks", "bos_choch", "liquidity", "sessions", "swing_highs_lows"]:
-                if key in bot_analysis:
-                    val = bot_analysis[key]
-                    if hasattr(val, 'to_string'):
-                        print(f'"{key}":\n' + val.to_string() + "\n")
-                    elif isinstance(val, dict):
-                        print(f'"{key}": {val}\n')
-                    else:
-                        print(f'"{key}": {val}\n')
-            print("\n---\n")
+            # Debug print block removed to avoid empty if/else blocks
 
             return snapshot
 
         except Exception as e:
-            print(f"   ❌ Error creando snapshot: {e}")
+            # print(f"   ❌ Error creando snapshot: {e}")
             return None
 
     def _analyze_market_conditions(self, df: pd.DataFrame, bot_analysis: Dict) -> Dict:
@@ -263,12 +253,12 @@ class SMCHistoricalManager:
         end_time = datetime.now()
 
         period_str = period.value if hasattr(period, 'value') else str(period)
-        print(f"📅 Generando timeline histórico para {period_str} con {intervals} intervalos")
+        # print(f"📅 Generando timeline histórico para {period_str} con {intervals} intervalos")
 
         for i in range(intervals):
             target_time = end_time - (interval_delta * i)
 
-            print(f"   📊 Procesando intervalo {i+1}/{intervals} - {target_time}")
+            # print(f"   📊 Procesando intervalo {i+1}/{intervals} - {target_time}")
 
             snapshot = self.create_historical_snapshot(target_time, period)
             if snapshot:
@@ -278,7 +268,7 @@ class SMCHistoricalManager:
         snapshots.sort(key=lambda x: x.timestamp)
 
         self.snapshots = snapshots
-        print(f"   ✅ Timeline generado con {len(snapshots)} snapshots")
+        # print(f"   ✅ Timeline generado con {len(snapshots)} snapshots")
 
         return snapshots
 
@@ -295,7 +285,7 @@ class SMCHistoricalManager:
             Lista de snapshots históricos
         """
         period_str = period.value if hasattr(period, 'value') else str(period)
-        print(f"📅 Creando timeline histórico detallado para {period_str} con {intervals} intervalos")
+        # print(f"📅 Creando timeline histórico detallado para {period_str} con {intervals} intervalos")
 
         # Limpiar snapshots existentes
         self.snapshots = []
@@ -313,17 +303,9 @@ class SMCHistoricalManager:
 
         for i in range(intervals + 1):
             target_time = start_time + (time_delta * i)
-
-            print(f"   📊 Creando snapshot {i+1}/{intervals+1} para {target_time}")
-
-            # Crear snapshot
             snapshot = self.create_historical_snapshot(target_time, period)
-
             if snapshot:
                 timeline.append(snapshot)
-                print(f"      ✅ Snapshot creado con {len(snapshot.signals)} señales")
-            else:
-                print(f"      ❌ Error creando snapshot")
 
         # Guardar timeline
         self.snapshots = timeline
@@ -331,7 +313,7 @@ class SMCHistoricalManager:
         # Guardar en cache
         self.save_timeline_to_cache(period, timeline)
 
-        print(f"✅ Timeline histórico creado con {len(timeline)} snapshots")
+        # print(f"✅ Timeline histórico creado con {len(timeline)} snapshots")
         return timeline
 
     def save_timeline_to_cache(self, period: HistoricalPeriod, timeline: List[HistoricalSnapshot]):
@@ -356,10 +338,11 @@ class SMCHistoricalManager:
             with open(cache_file, 'wb') as f:
                 pickle.dump(timeline, f)
 
-            print(f"💾 Timeline guardado en cache: {cache_file}")
+            # print(f"💾 Timeline guardado en cache: {cache_file}")
 
         except Exception as e:
-            print(f"❌ Error guardando timeline en cache: {e}")
+            # print(f"❌ Error guardando timeline en cache: {e}")
+            pass
 
     def load_timeline_from_cache(self, period: HistoricalPeriod) -> Optional[List[HistoricalSnapshot]]:
         """
@@ -382,14 +365,11 @@ class SMCHistoricalManager:
             if os.path.exists(cache_file):
                 with open(cache_file, 'rb') as f:
                     timeline = pickle.load(f)
-                print(f"📂 Timeline cargado desde cache: {cache_file}")
                 return timeline
             else:
-                print(f"📂 No existe cache para {cache_file}")
                 return None
 
         except Exception as e:
-            print(f"❌ Error cargando timeline desde cache: {e}")
             return None
 
     def save_historical_data(self, filename: Optional[str] = None) -> str:
@@ -414,11 +394,11 @@ class SMCHistoricalManager:
             with open(filepath, 'wb') as f:
                 pickle.dump(self.snapshots, f)
 
-            print(f"💾 Datos históricos guardados en {filepath}")
+            # print(f"💾 Datos históricos guardados en {filepath}")
             return filepath
 
         except Exception as e:
-            print(f"❌ Error guardando datos históricos: {e}")
+            # print(f"❌ Error guardando datos históricos: {e}")
             return ""
 
     def load_historical_data(self, filename: str) -> bool:
@@ -437,12 +417,12 @@ class SMCHistoricalManager:
             with open(filepath, 'rb') as f:
                 self.snapshots = pickle.load(f)
 
-            print(f"📂 Datos históricos cargados desde {filepath}")
-            print(f"   ✅ {len(self.snapshots)} snapshots cargados")
+            # print(f"📂 Datos históricos cargados desde {filepath}")
+            # print(f"   ✅ {len(self.snapshots)} snapshots cargados")
             return True
 
         except Exception as e:
-            print(f"❌ Error cargando datos históricos: {e}")
+            # print(f"❌ Error cargando datos históricos: {e}")
             return False
 
     def get_available_cache_files(self) -> List[str]:
@@ -667,8 +647,8 @@ def analyze_historical_performance(snapshots: List[HistoricalSnapshot]) -> Dict:
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    print("📅 SMC Historical Manager - Ejemplo de uso")
-    print("=" * 45)
+    # print("📅 SMC Historical Manager - Ejemplo de uso")
+    # print("=" * 45)
 
     # Crear gestor histórico
     manager = create_historical_manager("BTC/USDT", "15m")
@@ -679,9 +659,9 @@ if __name__ == "__main__":
     # Analizar rendimiento
     performance = analyze_historical_performance(timeline)
 
-    print("\n📊 Análisis de rendimiento histórico:")
-    print(f"   Total señales: {performance.get('total_signals', 0)}")
-    print(f"   Señales BUY: {performance.get('buy_signals', 0)}")
-    print(f"   Señales SELL: {performance.get('sell_signals', 0)}")
-    print(f"   R:R promedio: {performance.get('avg_rr', 0):.2f}")
-    print(f"   Confianza promedio: {performance.get('avg_confidence', 0):.1%}")
+    # print("\n📊 Análisis de rendimiento histórico:")
+    # print(f"   Total señales: {performance.get('total_signals', 0)}")
+    # print(f"   Señales BUY: {performance.get('buy_signals', 0)}")
+    # print(f"   Señales SELL: {performance.get('sell_signals', 0)}")
+    # print(f"   R:R promedio: {performance.get('avg_rr', 0):.2f}")
+    # print(f"   Confianza promedio: {performance.get('avg_confidence', 0):.1%}")

@@ -513,8 +513,7 @@ if is_mobile():
         col1, col2, col3 = st.columns(3)
         with col1:
             all_pairs = [
-                "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "BNB/USDT", "ADA/USDT", "SUI/USDT", "HBAR/USDT", "FARTCOIN/USDT",
-                "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
+                "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "BNB/USDT", "ADA/USDT", "SUI/USDT", "HBAR/USDT", "FARTCOIN/USDT"
             ]
             symbol = st.selectbox("Symbol", all_pairs)
             timeframe = st.selectbox(
@@ -672,8 +671,7 @@ with tab_realtime:
     """)
     # Full list of available pairs
     available_pairs = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "EUR/USD", "GBP/USD", "XAU/USD", "SP500",
-        "FARTCOIN/USDT", "BNB/USDT", "ADA/USDT", "DOGE/USDT", "SUI/USDT", "HBAR/USDT"
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "FARTCOIN/USDT", "BNB/USDT", "ADA/USDT", "DOGE/USDT", "SUI/USDT", "HBAR/USDT"
     ]
     # User selection for pairs to show
     selected_pairs = st.multiselect(
@@ -688,7 +686,7 @@ with tab_realtime:
     for idx, symbol_rt in enumerate(selected_pairs):
         with cols[idx % 2]:
             st.subheader(f"{symbol_rt} (15m)")
-            yf_symbol = symbol_rt.replace("/USDT", "-USD") if symbol_rt.endswith("/USDT") else symbol_rt
+            yf_symbol = symbol_rt  # Usar siempre formato XXX/USDT
             end_dt = datetime.utcnow()
             start_dt = end_dt - timedelta(days=2)
             df_rt = get_ohlcv_with_cache(yf_symbol, "15m", start_dt, end_dt)
@@ -1127,7 +1125,7 @@ with tab_overview:
             bot_analysis = None
     else:
         # Modo tiempo real
-        yf_symbol = symbol.replace("/USDT", "-USD") if symbol.endswith("/USDT") else symbol
+        yf_symbol = symbol  # Usar siempre formato XXX/USDT
         with st.spinner(f"📊 Cargando {data_days} días de datos para {symbol}..."):
             # Usar caché incremental para la carga principal
             end_dt = datetime.utcnow()

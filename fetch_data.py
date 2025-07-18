@@ -27,14 +27,12 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
         end_dt = pd.Timestamp(end_dt).tz_localize('UTC')
     else:
         end_dt = pd.Timestamp(end_dt).tz_convert('UTC')
-    # Detect provider
-    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
+    # Detect provider: all crypto symbols use Binance by default
+    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT", "FARTCOIN/USDT", "SUI/USDT"]
     if provider_hint:
         provider = provider_hint
-    elif symbol in binance_symbols:
-        provider = 'binance'
     else:
-        provider = 'yahoo'
+        provider = 'binance'
 
     # --- In-memory session cache for fast incremental updates ---
     session_key = f"ohlcv_{symbol.replace('/', '_')}_{timeframe}"
@@ -172,71 +170,12 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
     Returns:
         DataFrame con datos OHLC
     """
-    # Detectar si es símbolo de Binance o de Yahoo Finance
-    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
-    if symbol in binance_symbols:
-        exchange = ccxt.binance()
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        return df
-    else:
-        # Mapear símbolo a ticker de Yahoo Finance
-        ymap = {
-            "EUR/USD": "EURUSD=X",
-            "GBP/USD": "GBPUSD=X",
-            "XAU/USD": "XAUUSD=X",
-            "SP500": "^GSPC"
-        }
-        yf_symbol = ymap.get(symbol, symbol)
-        interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "4h": "240m", "1d": "1d"}
-        yf_interval = interval_map.get(timeframe, "15m")
-        # Yahoo limita la cantidad de datos en intervalos pequeños
-        data = yf.download(yf_symbol, period="7d", interval=yf_interval, progress=False)
-        if data.empty:
-            print(f"⚠️ Yahoo Finance no devolvió datos para {symbol} en {timeframe}")
-            return pd.DataFrame()
-        data = data.tail(limit)
-        # --- Robust normalization for yfinance DataFrame ---
-        # Flatten MultiIndex columns if present
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = ['_'.join([str(i) for i in col if i]) for col in data.columns.values]
-        # Lowercase and standardize column names
-        data.columns = [str(col).lower() for col in data.columns]
-        # Reset index to access timestamp
-        data = data.reset_index()
-        # Find the timestamp column (Datetime, Date, or index)
-        if 'datetime' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['datetime'])
-        elif 'date' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['date'])
-        elif 'index' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['index'])
-        else:
-            # fallback: use the first column as timestamp if it looks like a date
-            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce')
-
-        # Try to remap columns like open_x, open_close, etc. to open, high, low, close
-        for col in ['open', 'high', 'low', 'close']:
-            if col not in data.columns:
-                # Find any column that starts with the required name
-                candidates = [c for c in data.columns if c.startswith(col)]
-                if candidates:
-                    data[col] = data[candidates[0]]
-
-        # If volume is missing, fill with zeros
-        if 'volume' not in data.columns:
-            data['volume'] = 0.0
-
-        # Ensure required columns exist
-        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing = [col for col in ['open', 'high', 'low', 'close'] if col not in data.columns]
-        if missing:
-            print(f"❌ Faltan columnas requeridas de precios en Yahoo Finance para {symbol}: {missing}")
-            print(f"[DEBUG] Columnas disponibles: {list(data.columns)}")
-            return pd.DataFrame()
-        # Reorder and return only required columns
-        return data[required_cols]
+    # Todos los símbolos usan Binance por defecto
+    exchange = ccxt.binance()
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    return df
 
 def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     """
@@ -250,95 +189,28 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     Returns:
         DataFrame con datos OHLC extendidos
     """
-    # Detectar si es símbolo de Binance o de Yahoo Finance
-    binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT"]
-    if symbol in binance_symbols:
-        # Calcular límite basado en días y timeframe
-        timeframe_minutes = {
-            '1m': 1,
-            '5m': 5,
-            '15m': 15,
-            '30m': 30,
-            '1h': 60,
-            '4h': 240,
-            '1d': 1440
-        }
-        minutes_per_day = 1440  # 24 * 60
-        minutes_in_timeframe = timeframe_minutes.get(timeframe, 1)
-        candles_per_day = minutes_per_day // minutes_in_timeframe
-        total_limit = candles_per_day * days
-        # Limitar a máximo razonable para evitar problemas de API
-        total_limit = min(total_limit, 1000)
-        print(f"📊 Obteniendo {total_limit} velas para {days} días en {timeframe}")
-        exchange = ccxt.binance()
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=total_limit)
-        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        print(f"   ✅ Obtenidos {len(df)} puntos de datos desde {df['timestamp'].min()} hasta {df['timestamp'].max()}")
-        return df
-    else:
-        # Yahoo Finance
-        ymap = {
-            "EUR/USD": "EURUSD=X",
-            "GBP/USD": "GBPUSD=X",
-            "XAU/USD": "XAUUSD=X",
-            "SP500": "^GSPC"
-        }
-        yf_symbol = ymap.get(symbol, symbol)
-        interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "4h": "240m", "1d": "1d"}
-        yf_interval = interval_map.get(timeframe, "15m")
-        period_map = {1: "1d", 3: "3d", 5: "5d", 7: "7d", 14: "14d", 30: "1mo"}
-        period = period_map.get(days, "7d")
-        data = yf.download(yf_symbol, period=period, interval=yf_interval, progress=False)
-        if data.empty:
-            print(f"⚠️ Yahoo Finance no devolvió datos para {symbol} en {timeframe}")
-            return pd.DataFrame()
-        # --- Robust normalization for yfinance DataFrame ---
-        # Flatten MultiIndex columns if present
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = ['_'.join([str(i) for i in col if i]) for col in data.columns.values]
-        # Lowercase and standardize column names
-        data.columns = [str(col).lower() for col in data.columns]
-        # Reset index to access timestamp
-        data = data.reset_index()
-        # Find the timestamp column (Datetime, Date, or index)
-        if 'datetime' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['datetime'])
-        elif 'date' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['date'])
-        elif 'index' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['index'])
-        else:
-            # fallback: use the first column as timestamp if it looks like a date
-            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce')
-
-        # Try to remap columns like open_x, open_close, etc. to open, high, low, close
-        for col in ['open', 'high', 'low', 'close']:
-            if col not in data.columns:
-                candidates = [c for c in data.columns if c.startswith(col)]
-                if candidates:
-                    data[col] = data[candidates[0]]
-
-        # If volume is missing, fill with zeros
-        if 'volume' not in data.columns:
-            data['volume'] = 0.0
-
-        # Ensure required columns exist
-        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing = [col for col in ['open', 'high', 'low', 'close'] if col not in data.columns]
-        if missing:
-            print(f"❌ Faltan columnas requeridas de precios en Yahoo Finance para {symbol}: {missing}")
-            print(f"[DEBUG] Columnas disponibles: {list(data.columns)}")
-            return pd.DataFrame()
-        # Limitar a la cantidad de velas equivalente a Binance
-        timeframe_minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
-        minutes_per_day = 1440
-        minutes_in_timeframe = timeframe_minutes.get(timeframe, 1)
-        candles_per_day = minutes_per_day // minutes_in_timeframe
-        total_limit = candles_per_day * days
-        data = data.tail(total_limit)
-        # Reorder and return only required columns
-        return data[required_cols]
+    # Todos los símbolos usan Binance por defecto
+    timeframe_minutes = {
+        '1m': 1,
+        '5m': 5,
+        '15m': 15,
+        '30m': 30,
+        '1h': 60,
+        '4h': 240,
+        '1d': 1440
+    }
+    minutes_per_day = 1440  # 24 * 60
+    minutes_in_timeframe = timeframe_minutes.get(timeframe, 1)
+    candles_per_day = minutes_per_day // minutes_in_timeframe
+    total_limit = candles_per_day * days
+    total_limit = min(total_limit, 1000)
+    print(f"📊 Obteniendo {total_limit} velas para {days} días en {timeframe}")
+    exchange = ccxt.binance()
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=total_limit)
+    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    print(f"   ✅ Obtenidos {len(df)} puntos de datos desde {df['timestamp'].min()} hasta {df['timestamp'].max()}")
+    return df
 
 def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, max_limit=1000, sleep_sec=0.2):
     """
@@ -385,65 +257,5 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         df = df.reset_index(drop=True)
         return df
     except Exception as e:
-        print(f"Binance no disponible ({e}), usando yfinance para {symbol}")
-        # Mapeo de tickers para yfinance
-        YFINANCE_TICKER_MAP = {
-            "BTC/USDT": "BTC-USD",
-            "ETH/USDT": "ETH-USD",
-            "SOL/USDT": "SOL-USD",
-            "ADA/USDT": "ADA-USD",
-            "XRP/USDT": "XRP-USD",
-            "DOGE/USDT": "DOGE-USD",
-            "EUR/USD": "EURUSD=X",
-            "GBP/USD": "GBPUSD=X",
-            "XAU/USD": "XAUUSD=X",
-            "SP500": "^GSPC"
-        }
-        yf_ticker = YFINANCE_TICKER_MAP.get(symbol, symbol)
-        # Convertir timeframe a formato yfinance
-        yf_interval_map = {
-            "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "60m", "4h": "240m", "1d": "1d", "1w": "1wk", "1M": "1mo"
-        }
-        yf_interval = yf_interval_map.get(timeframe, "15m")
-        # yfinance requiere fechas en formato datetime
-        start = since if isinstance(since, datetime) else datetime.utcfromtimestamp(since/1000)
-        end = until if isinstance(until, datetime) else datetime.utcfromtimestamp(until/1000)
-        import yfinance as yf
-        data = yf.download(yf_ticker, start=start, end=end, interval=yf_interval, progress=False)
-        if data.empty:
-            print(f"⚠️ Yahoo Finance no devolvió datos para {symbol} en {timeframe}")
-            return pd.DataFrame()
-        # Normalización robusta
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = ['_'.join([str(i) for i in col if i]) for col in data.columns.values]
-        data.columns = [str(col).lower() for col in data.columns]
-        data = data.reset_index()
-        if 'datetime' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['datetime'], utc=True)
-        elif 'date' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['date'], utc=True)
-        elif 'index' in data.columns:
-            data['timestamp'] = pd.to_datetime(data['index'], utc=True)
-        else:
-            data['timestamp'] = pd.to_datetime(data.iloc[:, 0], errors='coerce', utc=True)
-        # Filtrar usando timestamps UTC tz-aware
-        if since:
-            since_dt = pd.to_datetime(since, utc=True)
-            data = data[data["timestamp"] >= since_dt]
-        if until:
-            until_dt = pd.to_datetime(until, utc=True)
-            data = data[data["timestamp"] <= until_dt]
-        for col in ['open', 'high', 'low', 'close']:
-            if col not in data.columns:
-                candidates = [c for c in data.columns if c.startswith(col)]
-                if candidates:
-                    data[col] = data[candidates[0]]
-        if 'volume' not in data.columns:
-            data['volume'] = 0.0
-        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing = [col for col in ['open', 'high', 'low', 'close'] if col not in data.columns]
-        if missing:
-            print(f"❌ Faltan columnas requeridas de precios en Yahoo Finance para {symbol}: {missing}")
-            print(f"[DEBUG] Columnas disponibles: {list(data.columns)}")
-            return pd.DataFrame()
-        return data[required_cols]
+        print(f"Binance no disponible ({e}), símbolo no soportado: {symbol}. Solo se aceptan pares XXX/USDT.")
+        return pd.DataFrame()
