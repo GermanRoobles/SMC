@@ -597,6 +597,13 @@ else:
         "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
     ]
     symbol = st.sidebar.selectbox("Symbol", all_pairs)
+    custom_symbol = st.sidebar.text_input("O introduce un símbolo manualmente (ej: DOGE/USDT)", "")
+    if custom_symbol.strip():
+        manual_symbol = custom_symbol.strip().upper()
+        if not manual_symbol.endswith("/USDT"):
+            st.sidebar.warning("El símbolo debe tener formato XXX/USDT")
+        else:
+            symbol = manual_symbol
     timeframe = st.sidebar.selectbox(
         "Timeframe",
         ["1m", "5m", "15m", "1h", "2h", "4h", "1d", "1w", "1M"],
