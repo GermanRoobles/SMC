@@ -23,6 +23,45 @@ def send_telegram_alert(message: str):
     except Exception as e:
         print(f"[TELEGRAM][EXC] {e}")
 
+# --- ALERT UTILS FOR MULTICHART ---
+ALERT_TIME_WINDOW_MINUTES = 5
+def is_recent(ts):
+    try:
+        now = datetime.utcnow()
+        if isinstance(ts, (int, float)):
+            ts_dt = datetime.utcfromtimestamp(ts)
+        elif isinstance(ts, str):
+            ts_dt = pd.to_datetime(ts, utc=True)
+        elif isinstance(ts, pd.Timestamp):
+            ts_dt = ts.to_pydatetime()
+        elif isinstance(ts, datetime):
+            ts_dt = ts
+        else:
+            return False
+        return (now - ts_dt).total_seconds() < ALERT_TIME_WINDOW_MINUTES * 60
+    except Exception:
+        return False
+
+def alert_liquidity_sweep(ts, sweep_type, price, symbol=None, timeframe=None):
+    if is_recent(ts):
+        msg = f"[TJR][{symbol or ''} {timeframe or ''}] Liquidity sweep detected: {sweep_type} at {price:.2f} ({ts})"
+        send_telegram_alert(msg)
+
+def alert_zone_created(ts, zone_type, price, symbol=None, timeframe=None):
+    if is_recent(ts):
+        msg = f"[TJR][{symbol or ''} {timeframe or ''}] {zone_type} created at {price:.2f} ({ts})"
+        send_telegram_alert(msg)
+
+def alert_sfp(ts, sfp_type, swept_level, close, symbol=None, timeframe=None):
+    if is_recent(ts):
+        msg = f"[SFP][{symbol or ''} {timeframe or ''}] {sfp_type} | Sweep: {swept_level:.2f} | Close: {close:.2f} | {ts}"
+        send_telegram_alert(msg)
+
+def alert_choch(ts, choch_type, price, symbol=None, timeframe=None):
+    if is_recent(ts):
+        msg = f"[CHoCH][{symbol or ''} {timeframe or ''}] {choch_type} at {price:.2f} ({ts})"
+        send_telegram_alert(msg)
+
 if "telegram_start_sent" not in st.session_state:
     try:
         send_telegram_alert("🚀 SMC Streamlit app has started running.")
@@ -689,11 +728,12 @@ with tab_realtime:
         help="Choose which pairs to show in the real-time multi-chart tab."
     )
     cols = st.columns(2)
-    # Send Telegram alerts for all selected pairs
+    # ...existing code...
+    # Overlays y alertas para todos los pares seleccionados
     for idx, symbol_rt in enumerate(selected_pairs):
         with cols[idx % 2]:
             st.subheader(f"{symbol_rt} (15m)")
-            yf_symbol = symbol_rt  # Usar siempre formato XXX/USDT
+            yf_symbol = symbol_rt
             end_dt = datetime.utcnow()
             start_dt = end_dt - timedelta(days=2)
             df_rt = get_ohlcv_with_cache(yf_symbol, "15m", start_dt, end_dt)
@@ -705,7 +745,7 @@ with tab_realtime:
                 continue
             signals_rt = analyze(df_rt)
             fig_rt = create_optimized_chart(df_rt)
-            # Overlays (same as before)
+            # --- FVG ---
             if show_fvg and "fvg" in signals_rt:
                 fvg_data = signals_rt["fvg"]
                 for i, row in fvg_data.iterrows():
@@ -729,10 +769,12 @@ with tab_realtime:
                                 text="FVG",
                                 showarrow=False,
                                 font=dict(size=10, color=color, family="Arial Black"),
-                                bgcolor="rgba(255,255,255,0.8)",
-                                bordercolor=color,
-                                borderwidth=1
-                                )
+                                bgcolor="rgba(255,255,255,0.8)"
+                            )
+                        ts = df_rt.iloc[i]["timestamp"]
+                        if 'is_recent' in globals() and is_recent(ts):
+                            alert_zone_created(ts, f"FVG {symbol_rt}", row["Top"])
+            # --- Orderblocks ---
             if show_ob and "orderblocks" in signals_rt:
                 ob_data = signals_rt["orderblocks"]
                 for i, row in ob_data.iterrows():
@@ -759,6 +801,10 @@ with tab_realtime:
                             bordercolor=color,
                             borderwidth=1
                         )
+                        ts = df_rt.iloc[i]["timestamp"]
+                        if 'is_recent' in globals() and is_recent(ts):
+                            alert_zone_created(ts, f"OrderBlock {symbol_rt}", row["Top"])
+            # --- BOS/CHoCH ---
             if show_bos and "bos_choch" in signals_rt:
                 bos_choch_data = signals_rt["bos_choch"]
                 for i, row in bos_choch_data.iterrows():
@@ -787,39 +833,27 @@ with tab_realtime:
                             bordercolor="#9C27B0",
                             borderwidth=1
                         )
+                        ts = df_rt.iloc[i]["timestamp"]
+                        if 'is_recent' in globals() and is_recent(ts):
+                            alert_choch(ts, label, df_rt.iloc[i]["high"])
+            # --- Liquidity ---
             if show_liq and "liquidity" in signals_rt:
                 liq_data = signals_rt["liquidity"]
                 if liq_data is not None:
                     for i, row in liq_data.iterrows():
                         trigger = row.get("Sweep", row.get("Liquidity", None))
                         if pd.notna(trigger):
-                            price = row.get("Price", row.get("Level", df_rt.iloc[i]["high"]))
-                            fig_rt.add_shape(
-                                type="line",
-                                x0=df_rt.iloc[max(0, i-5)]["timestamp"],
-                                x1=df_rt.iloc[min(i+5, len(df_rt)-1)]["timestamp"],
-                                y0=price,
-                                y1=price,
-                                line=dict(color="#FFD700", width=2, dash="solid")
-                            )
+                            ts = df_rt.iloc[i]["timestamp"]
+                            if 'is_recent' in globals() and is_recent(ts):
+                                alert_liquidity_sweep(ts, str(trigger), df_rt.iloc[i]["close"])
+            # --- Swings ---
             if show_swings and "swing_highs_lows" in signals_rt:
                 swing_data = signals_rt.get("swing_highs_lows", None)
                 if swing_data is not None and hasattr(swing_data, 'iterrows'):
                     for i, row in swing_data.iterrows():
                         highlow = row.get("HighLow", None) if hasattr(row, 'get') else row["HighLow"] if "HighLow" in row else None
                         if pd.notna(highlow):
-                            color = "#00BFFF" if highlow == "high" else "#FF8C00"
-                            fig_rt.add_shape(
-                                type="circle",
-                                xref="x", yref="y",
-                                x0=df_rt.iloc[i]["timestamp"],
-                                x1=df_rt.iloc[i]["timestamp"],
-                                y0=df_rt.iloc[i]["high"] * 1.001 if highlow == "high" else df_rt.iloc[i]["low"] * 0.999,
-                                y1=df_rt.iloc[i]["high"] * 1.002 if highlow == "high" else df_rt.iloc[i]["low"] * 0.998,
-                                line=dict(color=color, width=2),
-                                fillcolor=color,
-                                opacity=0.5
-                            )
+                            pass  # Overlay/alert logic para swings si se requiere
             # --- SFP Overlay (Real-Time Chart, filtered) ---
             market_structure_rt = signals_rt.get('market_structure', 'neutral')
             fvgs_rt = []
@@ -870,6 +904,8 @@ with tab_realtime:
                             bordercolor="#26A69A",
                             borderwidth=1
                         )
+                        if 'is_recent' in globals() and is_recent(ts):
+                            alert_sfp(ts, sfp['type'], sfp['swept_level'], sfp['close'])
                     elif 'Bearish' in sfp['type']:
                         fig_rt.add_annotation(
                             x=ts,
@@ -885,6 +921,8 @@ with tab_realtime:
                             bordercolor="#F44336",
                             borderwidth=1
                         )
+                        if 'is_recent' in globals() and is_recent(ts):
+                            alert_sfp(ts, sfp['type'], sfp['swept_level'], sfp['close'])
             st.plotly_chart(fig_rt, use_container_width=True, key=f"rt_chart_{symbol_rt}")
 with tab_example:
     st.header("Visual Example: SMC Simplified by TJR Strategy (LONG and SHORT)")
