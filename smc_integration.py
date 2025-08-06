@@ -185,10 +185,37 @@ def add_signals_statistics_to_chart(fig, signals: List):
     # Esta función es un placeholder para mantener compatibilidad
     pass
 
+def generate_trading_signals(df: pd.DataFrame, liquidity_zones: List, sweeps: List,
+                           choch_bos: List, order_blocks: List, fvg_zones: List) -> List:
+    """
+    Generar señales de trading basadas en la estrategia SMC
+    
+    Args:
+        df: DataFrame con datos OHLC
+        liquidity_zones: Zonas de liquidez
+        sweeps: Barridos detectados
+        choch_bos: Cambios de estructura
+        order_blocks: Order blocks
+        fvg_zones: Fair value gaps
+    
+    Returns:
+        Lista de señales de trading
+    """
+    signals = []
+    
+    # Verificar que tenemos suficientes datos
+    if len(df) < 10:
+        return signals
+    
+    # Por ahora retornamos una lista vacía
+    # Esta función puede ser expandida en el futuro con lógica de señales más compleja
+    return signals
+
 # Exportar funciones principales
 __all__ = [
     'display_bot_metrics',
     'get_smc_bot_analysis',
     'add_bot_signals_to_chart',
-    'add_signals_statistics_to_chart'
+    'add_signals_statistics_to_chart',
+    'generate_trading_signals'
 ]
