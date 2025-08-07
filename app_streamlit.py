@@ -420,6 +420,158 @@ def show_temp_message(message_type, message, duration=5):
         st.success(message)
     # Los demás mensajes se omiten para evitar spam
 
+def generate_backtest_signals(df: pd.DataFrame, smc_analysis: Dict, enable_ml: bool = True) -> List:
+    """
+    Generar señales para backtesting usando SMC tradicional o ML
+    
+    Args:
+        df: DataFrame con datos OHLC
+        smc_analysis: Análisis SMC
+        enable_ml: Si usar ML para generar señales
+    
+    Returns:
+        Lista de TradeSignal para backtesting
+    """
+    signals = []
+    
+    try:
+        if enable_ml:
+            # Usar ML Signal Generator
+            from smc_ml_signal_integration import MLSignalIntegration
+            ml_integration = MLSignalIntegration()
+            
+            # Generar señales ML para puntos clave
+            for i in range(20, len(df) - 20, 5):  # Cada 5 velas para evitar sobrecarga
+                current_data = df.iloc[:i+1]
+                current_price = current_data['close'].iloc[-1]
+                
+                # Generar señal ML
+                ml_signal = ml_integration.generate_ml_signal(
+                    current_data, smc_analysis, "BTCUSDT", "15m"
+                )
+                
+                if ml_signal and ml_signal.signal_type.value != "HOLD":
+                    # Convertir a TradeSignal
+                    from smc_trade_engine import TradeSignal, SignalType
+                    trade_signal = TradeSignal(
+                        timestamp=current_data['timestamp'].iloc[-1],
+                        symbol="BTCUSDT",
+                        timeframe="15m",
+                        signal_type=SignalType.LONG if ml_signal.signal_type.value == "BUY" else SignalType.SHORT,
+                        entry_price=ml_signal.entry_price,
+                        stop_loss=ml_signal.stop_loss,
+                        take_profit=ml_signal.take_profit_1,
+                        risk_reward=ml_signal.risk_reward_ratio,
+                        confidence=ml_signal.confluence_score,
+                        setup_components={'ml_generated': True},
+                        confirmation_type=None
+                    )
+                    signals.append(trade_signal)
+        else:
+            # Usar señales SMC tradicionales
+            from smc_trade_engine import TradeSignal, SignalType, ConfirmationType
+            
+            # Generar señales basadas en FVG y Order Blocks
+            if 'fvg' in smc_analysis and not smc_analysis['fvg'].empty:
+                fvg_data = smc_analysis['fvg']
+                for i, row in fvg_data.iterrows():
+                    if pd.notna(row['FVG']) and i < len(df) - 10:
+                        # Crear señal basada en FVG
+                        entry_price = df.iloc[i]['close']
+                        if row['FVG'] == 1:  # Bullish FVG
+                            signal_type = SignalType.LONG
+                            stop_loss = entry_price * 0.98
+                            take_profit = entry_price * 1.04
+                        else:  # Bearish FVG
+                            signal_type = SignalType.SHORT
+                            stop_loss = entry_price * 1.02
+                            take_profit = entry_price * 0.96
+                        
+                        trade_signal = TradeSignal(
+                            timestamp=df.iloc[i]['timestamp'],
+                            symbol="BTCUSDT",
+                            timeframe="15m",
+                            signal_type=signal_type,
+                            entry_price=entry_price,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            risk_reward=2.0,
+                            confidence=0.7,
+                            setup_components={'fvg_generated': True},
+                            confirmation_type=ConfirmationType.ENGULFING
+                        )
+                        signals.append(trade_signal)
+            
+            # Generar señales adicionales basadas en Order Blocks
+            if 'orderblocks' in smc_analysis and not smc_analysis['orderblocks'].empty:
+                ob_data = smc_analysis['orderblocks']
+                for i, row in ob_data.iterrows():
+                    if i < len(df) - 10:
+                        entry_price = df.iloc[i]['close']
+                        # Determinar dirección basada en el contexto
+                        if i > 0 and df.iloc[i]['close'] > df.iloc[i-1]['close']:
+                            signal_type = SignalType.LONG
+                            stop_loss = entry_price * 0.97
+                            take_profit = entry_price * 1.06
+                        else:
+                            signal_type = SignalType.SHORT
+                            stop_loss = entry_price * 1.03
+                            take_profit = entry_price * 0.94
+                        
+                        trade_signal = TradeSignal(
+                            timestamp=df.iloc[i]['timestamp'],
+                            symbol="BTCUSDT",
+                            timeframe="15m",
+                            signal_type=signal_type,
+                            entry_price=entry_price,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            risk_reward=2.0,
+                            confidence=0.6,
+                            setup_components={'ob_generated': True},
+                            confirmation_type=ConfirmationType.ENGULFING
+                        )
+                        signals.append(trade_signal)
+            
+            # Generar señales basadas en swings si están disponibles
+            if 'swing_highs_lows' in smc_analysis and not smc_analysis['swing_highs_lows'].empty:
+                swing_data = smc_analysis['swing_highs_lows']
+                for i, row in swing_data.iterrows():
+                    if i < len(df) - 10:
+                        entry_price = df.iloc[i]['close']
+                        # Señales basadas en swings
+                        if row.get('swing_high', False):
+                            signal_type = SignalType.SHORT
+                            stop_loss = entry_price * 1.02
+                            take_profit = entry_price * 0.96
+                        elif row.get('swing_low', False):
+                            signal_type = SignalType.LONG
+                            stop_loss = entry_price * 0.98
+                            take_profit = entry_price * 1.04
+                        else:
+                            continue
+                        
+                        trade_signal = TradeSignal(
+                            timestamp=df.iloc[i]['timestamp'],
+                            symbol="BTCUSDT",
+                            timeframe="15m",
+                            signal_type=signal_type,
+                            entry_price=entry_price,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            risk_reward=2.0,
+                            confidence=0.5,
+                            setup_components={'swing_generated': True},
+                            confirmation_type=ConfirmationType.ENGULFING
+                        )
+                        signals.append(trade_signal)
+        
+        return signals
+        
+    except Exception as e:
+        print(f"Error generando señales de backtesting: {e}")
+        return []
+
 def consolidate_smc_metrics(smc_analysis, bot_analysis):
     """
     Consolidar métricas SMC para evitar duplicaciones y inconsistencias
@@ -673,12 +825,18 @@ else:
         max_risk_percent = st.sidebar.slider("Maximum Risk (%)", 0.5, 5.0, 1.0, 0.5)
         show_trade_signals = st.sidebar.checkbox("Show Trading Signals", value=True)
         show_trade_stats = st.sidebar.checkbox("Show Trading Stats", value=True)
+    st.sidebar.markdown("### 📈 Backtesting")
     backtesting_enabled = st.sidebar.checkbox("Enable Backtesting", value=False)
+    st.session_state['backtesting_enabled'] = backtesting_enabled
     if backtesting_enabled:
         initial_capital = st.sidebar.number_input("Initial Capital ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
         risk_per_trade = st.sidebar.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
+        max_trade_duration = st.sidebar.slider("Max Trade Duration (hours)", 1, 168, 48, 1)
+        enable_ml_backtesting = st.sidebar.checkbox("Enable ML Backtesting", value=True)
         show_backtest_chart = st.sidebar.checkbox("Show Performance Chart", value=True)
         show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
+        auto_backtest = st.sidebar.checkbox("Auto Backtest on Signals", value=False)
+        st.session_state['auto_backtest'] = auto_backtest
     show_open_interest = st.sidebar.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
     st.sidebar.markdown("### 📅 Historical Analysis")
     enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
@@ -1128,6 +1286,179 @@ with tab_example:
         st.plotly_chart(fig_short, use_container_width=True)
         st.info(f"**Structure:** {scenario_short['structure']} | **Entry:** {scenario_short['entry']} | **SL:** {scenario_short['sl']} | **TP:** {scenario_short['tp']} | {scenario_short['result']}")
 
+# --- SEÑALES Y TRADING ---
+with tab_signals:
+    st.header("🎯 Señales y Trading")
+    
+    # Obtener trade_analysis del session_state si existe
+    trade_analysis = st.session_state.get('trade_analysis', None)
+    
+    if trade_analysis and trade_analysis.get('signal_count', 0) > 0:
+        st.success(f"✅ {trade_analysis['signal_count']} señales detectadas")
+        
+        # Mostrar señales en formato tabla
+        if 'signals' in trade_analysis:
+            signals_data = []
+            for i, signal in enumerate(trade_analysis['signals']):
+                signals_data.append({
+                    'Nº': i + 1,
+                    'Tipo': signal.signal_type.value,
+                    'Entrada': f"${signal.entry_price:.2f}",
+                    'SL': f"${signal.stop_loss:.2f}",
+                    'TP': f"${signal.take_profit:.2f}",
+                    'R/R': f"{signal.risk_reward:.1f}",
+                    'Confianza': f"{getattr(signal, 'confidence', 0):.1f}%"
+                })
+            
+            signals_df = pd.DataFrame(signals_data)
+            st.dataframe(signals_df, use_container_width=True)
+            
+            # Gráfico de distribución de señales
+            if len(trade_analysis['signals']) > 1:
+                signal_types = [s.signal_type.value for s in trade_analysis['signals']]
+                signal_counts = pd.Series(signal_types).value_counts()
+                
+                fig_dist = go.Figure(data=[
+                    go.Bar(x=signal_counts.index, y=signal_counts.values, 
+                           marker_color=['#00FF00' if x == 'LONG' else '#FF0000' for x in signal_counts.index])
+                ])
+                fig_dist.update_layout(
+                    title="Distribución de Señales",
+                    xaxis_title="Tipo de Señal",
+                    yaxis_title="Cantidad",
+                    height=300
+                )
+                st.plotly_chart(fig_dist, use_container_width=True)
+    else:
+        st.info("ℹ️ No hay señales de trading disponibles en este momento")
+        
+        # Mostrar estadísticas del motor de trading
+        if trade_analysis:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Señales Analizadas", trade_analysis.get('signals_analyzed', 0))
+            with col2:
+                st.metric("Confianza Promedio", f"{trade_analysis.get('avg_confidence', 0):.1f}%")
+            with col3:
+                st.metric("R/R Promedio", f"{trade_analysis.get('avg_risk_reward', 0):.1f}")
+
+# --- BACKTESTING Y HISTORIAL ---
+with tab_backtest:
+    st.header("📈 Backtesting y Historial")
+    
+    # Configuración del backtesting
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("⚙️ Configuración")
+        backtest_capital = st.number_input("Capital Inicial ($)", min_value=1000, max_value=1000000, value=10000, step=1000)
+        backtest_risk = st.slider("Riesgo por Trade (%)", 0.5, 5.0, 1.0, 0.5)
+        backtest_duration = st.slider("Duración Máxima (horas)", 1, 168, 48, 1)
+    
+    with col2:
+        st.subheader("📊 Parámetros")
+        backtest_period = st.selectbox("Período de Datos", ["7 días", "14 días", "30 días", "60 días"], index=1)
+        backtest_timeframe = st.selectbox("Timeframe", ["15m", "1h", "4h", "1d"], index=0)
+        enable_ml_backtest = st.checkbox("Incluir ML en Backtesting", value=True)
+    
+    # Ejecutar backtesting
+    if st.button("🚀 Ejecutar Backtesting Completo", type="primary"):
+        with st.spinner("📈 Ejecutando backtesting..."):
+            try:
+                # Obtener datos históricos para backtesting
+                days_map = {"7 días": 7, "14 días": 14, "30 días": 30, "60 días": 60}
+                backtest_days = days_map[backtest_period]
+                
+                end_dt = datetime.utcnow()
+                start_dt = end_dt - timedelta(days=backtest_days)
+                backtest_df = get_ohlcv_with_cache(symbol, backtest_timeframe, start_dt, end_dt)
+                
+                if backtest_df.empty:
+                    st.error("❌ No se pudieron obtener datos para backtesting")
+                else:
+                    st.success(f"✅ Datos cargados: {len(backtest_df)} velas")
+                    
+                    # Generar señales para backtesting
+                    backtest_signals = analyze(backtest_df)
+                    
+                    # Crear señales de trading para backtesting
+                    if enable_ml_backtest:
+                        # Para backtesting, usar señales SMC tradicionales ya que ML tiene cooldown
+                        signals_for_backtest = generate_backtest_signals(backtest_df, backtest_signals, False)
+                        st.info("📊 Usando señales SMC tradicionales para backtesting (ML tiene cooldown)")
+                    else:
+                        signals_for_backtest = generate_backtest_signals(backtest_df, backtest_signals, False)
+                        st.info("📊 Usando señales SMC tradicionales")
+                    
+                    if signals_for_backtest:
+                        st.success(f"✅ {len(signals_for_backtest)} señales generadas para backtesting")
+                        if enable_ml_backtest:
+                            st.info("🤖 Señales generadas con ML")
+                        else:
+                            st.info("📊 Señales generadas con SMC tradicional")
+                    else:
+                        st.warning("⚠️ No se pudieron generar señales para backtesting")
+                    
+                    # Ejecutar backtesting
+                    if signals_for_backtest:
+                        backtest_results = run_backtest_analysis(
+                            backtest_df, 
+                            signals_for_backtest,
+                            backtest_capital,
+                            backtest_risk
+                        )
+                        
+                        if backtest_results['success']:
+                            results = backtest_results['results']
+                            
+                            # Mostrar resultados principales
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Trades", results.total_trades)
+                                st.metric("Win Rate", f"{results.win_rate:.1f}%")
+                            with col2:
+                                st.metric("Profit Factor", f"{results.profit_factor:.2f}")
+                                st.metric("Total PnL", f"${results.total_pnl:.2f}")
+                            with col3:
+                                st.metric("Max Drawdown", f"{results.max_drawdown_percent:.1f}%")
+                                st.metric("Sharpe Ratio", f"{results.sharpe_ratio:.2f}")
+                            with col4:
+                                st.metric("Avg Trade Duration", f"{results.average_trade_duration:.1f}h")
+                                st.metric("Expectancy", f"{results.expectancy:.2f}")
+                            
+                            # Gráfico de performance
+                            if 'chart' in backtest_results:
+                                st.plotly_chart(backtest_results['chart'], use_container_width=True)
+                            
+                            # Reporte detallado
+                            if 'report' in backtest_results:
+                                with st.expander("📋 Reporte Detallado"):
+                                    st.text(backtest_results['report'])
+                            
+                            # Tabla de trades
+                            if results.trades:
+                                trades_data = []
+                                for i, trade in enumerate(results.trades):
+                                    trades_data.append({
+                                        'Nº': i + 1,
+                                        'Tipo': trade.signal_type,
+                                        'Entrada': f"${trade.entry_price:.2f}",
+                                        'Salida': f"${trade.exit_price:.2f}" if trade.exit_price else "Abierto",
+                                        'Resultado': trade.result.value if trade.result else "Pendiente",
+                                        'PnL': f"${trade.pnl_points:.2f}",
+                                        'Duración': f"{trade.duration_hours:.1f}h"
+                                    })
+                                
+                                trades_df = pd.DataFrame(trades_data)
+                                st.dataframe(trades_df, use_container_width=True)
+                        else:
+                            st.error(f"❌ Error en backtesting: {backtest_results.get('report', 'Error desconocido')}")
+                    else:
+                        st.warning("⚠️ No se generaron señales para backtesting")
+                        
+            except Exception as e:
+                st.error(f"❌ Error en backtesting: {str(e)}")
+                st.exception(e)
+
 # --- VISIÓN GENERAL ---
 with tab_overview:
     st.header("Visión General del Mercado")
@@ -1211,6 +1542,7 @@ with tab_overview:
         import logging
         logging.basicConfig(level=logging.INFO)
         trade_analysis = None
+        st.session_state['trade_analysis'] = None
         htf_context = None
         if trade_engine_enabled and bot_analysis:
             try:
@@ -1229,6 +1561,8 @@ with tab_overview:
                         logging.info(f"[HTF] Contexto HTF ({htf_timeframe}): {htf_context}")
                     # Llamada sin htf_context (para compatibilidad)
                     trade_analysis = get_trade_engine_analysis(df, bot_analysis)
+                    # Guardar en session_state para uso en pestañas
+                    st.session_state['trade_analysis'] = trade_analysis
                     if trade_analysis['signal_count'] > 0:
                         show_temp_message('success', f"✅ Motor TJR: {trade_analysis['signal_count']} señales detectadas")
                         for sig in trade_analysis['signals']:
@@ -1240,21 +1574,60 @@ with tab_overview:
                 st.sidebar.error(f"Error en Motor TJR: {e}")
                 st.error(f"❌ Error detallado en Motor TJR: {str(e)}")
                 trade_analysis = None
+                st.session_state['trade_analysis'] = None
 
         # Backtesting Analysis
         backtest_analysis = None
+        
+        # Auto backtesting si está habilitado
+        auto_backtest = st.session_state.get('auto_backtest', False)
+        if auto_backtest and trade_analysis and trade_analysis['signal_count'] > 0:
+            try:
+                with st.spinner("🔄 Auto Backtesting..."):
+                    auto_backtest_results = run_backtest_analysis(
+                        df,
+                        trade_analysis['signals'],
+                        initial_capital,
+                        risk_per_trade
+                    )
+                    
+                    if auto_backtest_results['success']:
+                        auto_results = auto_backtest_results['results']
+                        st.sidebar.success(f"🔄 Auto: {auto_results.total_trades} trades, {auto_results.win_rate:.1f}% WR")
+                    else:
+                        st.sidebar.warning("⚠️ Auto backtesting falló")
+            except Exception as e:
+                st.sidebar.error(f"Auto backtesting error: {e}")
+        
+        backtesting_enabled = st.session_state.get('backtesting_enabled', False)
         if backtesting_enabled and trade_analysis and trade_analysis['signal_count'] > 0:
             try:
                 with st.spinner("📈 Ejecutando Backtesting..."):
+                    # Usar configuración mejorada del sidebar
                     backtest_analysis = run_backtest_analysis(
                         df,
                         trade_analysis['signals'],
                         initial_capital,
                         risk_per_trade
                     )
+                    
                     if backtest_analysis['success']:
                         results = backtest_analysis['results']
-                        st.success(f"✅ Backtesting: {results.total_trades} trades, Win Rate: {results.win_rate:.1f}%")
+                        
+                        # Mostrar métricas principales en sidebar
+                        st.sidebar.success(f"✅ Backtesting: {results.total_trades} trades")
+                        st.sidebar.metric("Win Rate", f"{results.win_rate:.1f}%")
+                        st.sidebar.metric("Profit Factor", f"{results.profit_factor:.2f}")
+                        st.sidebar.metric("Total PnL", f"${results.total_pnl:.2f}")
+                        
+                        # Mostrar gráfico si está habilitado
+                        if show_backtest_chart and 'chart' in backtest_analysis:
+                            st.plotly_chart(backtest_analysis['chart'], use_container_width=True)
+                        
+                        # Mostrar reporte detallado si está habilitado
+                        if show_backtest_report and 'report' in backtest_analysis:
+                            with st.expander("📋 Reporte de Backtesting"):
+                                st.text(backtest_analysis['report'])
                     else:
                         st.warning("⚠️ Backtesting: No se pudieron procesar señales")
             except Exception as e:
