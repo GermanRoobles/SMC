@@ -85,6 +85,10 @@ from smc_ml_signal_integration import (
     get_ml_signal_integration, display_ml_signals_sidebar, display_ml_signal_metrics
 )
 
+# --- NEW ADVANCED FEATURES ---
+from smc_multi_timeframe import display_multi_timeframe_dashboard
+from smc_market_structure import display_market_structure_analysis
+
 # --- SFP DETECTION ---
 # --- SFP DETECTION ---
 def detect_sfps(
@@ -785,12 +789,12 @@ else:
     show_liq = st.sidebar.checkbox("Liquidity", value=True)
     show_bos = st.sidebar.checkbox("BOS/CHoCH", value=True)
     show_swings = st.sidebar.checkbox("Swings", value=True)
-    show_sfp = st.sidebar.checkbox("SFP (Swing Failure Patterns)", value=True)
+    show_sfp = st.sidebar.checkbox("SFP (Swing Failure Patterns)", value=False)
     st.sidebar.markdown("### HTF Overlays & Alerts")
-    show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=False)
+    show_htf_zones = st.sidebar.checkbox("Show HTF FVGs/OBs (Weekly/Monthly) on 4H", value=True)
     enable_htf_alerts = st.sidebar.checkbox("HTF Alerts (FVG/OB/SFP)", value=False)
     htf_timeframes = st.sidebar.multiselect("HTF for overlays", ["1w", "1M"], default=["1w"])
-    require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=False, help="Only show SFPs if a CHoCH occurs after the sweep.")
+    require_choch_sfp = st.sidebar.checkbox("Require CHoCH for SFPs", value=True, help="Only show SFPs if a CHoCH occurs after the sweep.")
     all_pairs = [
         "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "BNB/USDT", "ADA/USDT", "SUI/USDT", "HBAR/USDT", "FARTCOIN/USDT",
         "EUR/USD", "GBP/USD", "XAU/USD", "SP500"
@@ -858,10 +862,14 @@ else:
     )
     show_future_signals = st.sidebar.checkbox("Show Future Signals", value=False, help="Preview of future signals (only in historical mode)")
     show_historical_charts = st.sidebar.checkbox("Historical Charts", value=False, help="Show historical evolution charts")
+    
+    st.sidebar.markdown("### 🤖 Advanced Analysis")
+    multi_timeframe_enabled = st.sidebar.checkbox("Multi-Timeframe Analysis", value=False)
+    market_structure_enabled = st.sidebar.checkbox("Market Structure Analysis", value=False)
 
 # --- MAIN TABS (ENGLISH) ---
-tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, tab_realtime = st.tabs([
-    "Market Overview", "Setups & Confluences", "Signals & Trading", "Backtesting & History", "Configuration", "Visual Example", "Real-Time Multi-Chart"
+tab_overview, tab_setups, tab_signals, tab_backtest, tab_config, tab_example, tab_realtime, tab_advanced = st.tabs([
+    "Market Overview", "Setups & Confluences", "Signals & Trading", "Backtesting & History", "Configuration", "Visual Example", "Real-Time Multi-Chart", "Advanced Analysis"
 ])
 
 # Register app end alert (when Streamlit script finishes)
@@ -3205,3 +3213,35 @@ Smart Money Concepts en tiempo real<br>
 <i>Yes, u a bitch</i>
 </div>
 """, unsafe_allow_html=True)
+
+# --- ADVANCED ANALYSIS TAB ---
+with tab_advanced:
+    st.header("🤖 Advanced Analysis")
+    st.markdown("""
+    ### Funcionalidades Avanzadas de Análisis
+    
+    **Multi-Timeframe Analysis:** Análisis comparativo de múltiples timeframes para confirmación de señales.
+    
+    **Market Structure Analysis:** Análisis profundo de estructura de mercado con niveles clave y fases.
+    """)
+    
+    # Multi-Timeframe Analysis
+    if multi_timeframe_enabled:
+        st.subheader("📊 Multi-Timeframe Analysis Dashboard")
+        display_multi_timeframe_dashboard(symbol, data_days)
+    
+    # Market Structure Analysis
+    if market_structure_enabled:
+        st.subheader("🔍 Market Structure Analysis")
+        display_market_structure_analysis(symbol, timeframe, data_days)
+    
+    # Mostrar mensaje si no hay análisis habilitados
+    if not multi_timeframe_enabled and not market_structure_enabled:
+        st.info("""
+        💡 **Para usar el análisis avanzado:**
+        
+        1. **Multi-Timeframe Analysis:** Habilita en la sidebar para análisis comparativo
+        2. **Market Structure Analysis:** Habilita en la sidebar para análisis de estructura
+        
+        Estas funcionalidades proporcionan análisis más profundos y confirmación de señales.
+        """)

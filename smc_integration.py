@@ -116,7 +116,7 @@ def display_bot_metrics(bot_analysis: Dict):
         st.sidebar.error(f"❌ Error en display_bot_metrics: {str(e)}")
         st.sidebar.warning("⚠️ Algunas métricas no están disponibles")
 
-def get_smc_bot_analysis(df: pd.DataFrame) -> Dict:
+def get_smc_bot_analysis(df: pd.DataFrame, symbol: str = "BTC/USDT", timeframe: str = "15m") -> Dict:
     """
     Función principal para obtener análisis del bot SMC
 

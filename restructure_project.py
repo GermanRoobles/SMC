@@ -1,4 +1,113 @@
-# 🚀 SMC TradingView - Smart Money Concepts Trading System
+#!/usr/bin/env python3
+"""
+Script para reestructurar el proyecto SMC TradingView
+Organiza archivos en directorios lógicos
+"""
+
+import os
+import shutil
+from pathlib import Path
+
+def create_directories():
+    """Crear directorios organizados"""
+    directories = [
+        "tests/",
+        "tests/ml/",
+        "tests/backtesting/",
+        "tests/htf/",
+        "debug/",
+        "scripts/",
+        "docs/",
+        "examples/",
+        "configs/"
+    ]
+    
+    for directory in directories:
+        Path(directory).mkdir(exist_ok=True)
+        print(f"✅ Directorio creado: {directory}")
+
+def move_test_files():
+    """Mover archivos de test a directorios organizados"""
+    
+    # Archivos de test ML
+    ml_tests = [
+        "test_ml_predictor.py",
+        "test_ml_signal_generator.py",
+        "simple_ml_demo.py"
+    ]
+    
+    # Archivos de test backtesting
+    backtesting_tests = [
+        "test_smc_backtesting.py",
+        "test_backtesting_integration.py",
+        "fix_backtesting_issues.py",
+        "fix_backtesting_realism.py",
+        "fix_final_backtesting_issues.py"
+    ]
+    
+    # Archivos de test HTF
+    htf_tests = [
+        "test_htf_indicators.py",
+        "test_htf_fvg.py",
+        "test_htf_real_fvgs.py",
+        "test_htf_limitation.py",
+        "test_htf_duplicates.py",
+        "test_htf_final.py",
+        "debug_htf_indicators.py"
+    ]
+    
+    # Archivos de debug
+    debug_files = [
+        "analisis_dashboard_final.py"
+    ]
+    
+    # Archivos de ejemplo
+    example_files = [
+        "ejemplo_uso_bot.py",
+        "example_smc_bot.py"
+    ]
+    
+    # Archivos de configuración
+    config_files = [
+        "smc_config.py",
+        "smc_config_advanced.py",
+        "smc_profiles.py"
+    ]
+    
+    # Mover archivos
+    for file in ml_tests:
+        if os.path.exists(file):
+            shutil.move(file, f"tests/ml/{file}")
+            print(f"📁 Movido: {file} -> tests/ml/")
+    
+    for file in backtesting_tests:
+        if os.path.exists(file):
+            shutil.move(file, f"tests/backtesting/{file}")
+            print(f"📁 Movido: {file} -> tests/backtesting/")
+    
+    for file in htf_tests:
+        if os.path.exists(file):
+            shutil.move(file, f"tests/htf/{file}")
+            print(f"📁 Movido: {file} -> tests/htf/")
+    
+    for file in debug_files:
+        if os.path.exists(file):
+            shutil.move(file, f"debug/{file}")
+            print(f"📁 Movido: {file} -> debug/")
+    
+    for file in example_files:
+        if os.path.exists(file):
+            shutil.move(file, f"examples/{file}")
+            print(f"📁 Movido: {file} -> examples/")
+    
+    for file in config_files:
+        if os.path.exists(file):
+            shutil.move(file, f"configs/{file}")
+            print(f"📁 Movido: {file} -> configs/")
+
+def create_improved_readme():
+    """Crear README mejorado"""
+    readme_content = """# 🚀 SMC TradingView - Smart Money Concepts Trading System
 
 ## 📊 Descripción
 Sistema avanzado de trading basado en Smart Money Concepts (SMC) con análisis en tiempo real, backtesting integrado, machine learning y visualización profesional.
@@ -203,3 +312,86 @@ MIT License - Ver LICENSE para detalles
 
 ---
 **Desarrollado con ❤️ para la comunidad de trading**
+"""
+    
+    with open("README.md", "w", encoding="utf-8") as f:
+        f.write(readme_content)
+    
+    print("✅ README mejorado creado")
+
+def create_documentation():
+    """Crear documentación adicional"""
+    
+    # API Documentation
+    api_docs = """# 📚 API Documentation
+
+## Core Modules
+
+### fetch_data.py
+```python
+get_ohlcv(symbol, timeframe, limit=100)
+get_ohlcv_extended(symbol, timeframe, days=30)
+get_ohlcv_with_cache(symbol, timeframe, limit=100)
+```
+
+### smc_analysis.py
+```python
+analyze(df, timeframe='15m')
+get_current_session()
+get_session_color(session)
+```
+
+### smc_ml_predictor.py
+```python
+SMCMLPredictor()
+predict_signal_probability(df, smc_analysis)
+```
+
+### smc_backtester.py
+```python
+run_backtest_analysis(df, signals, initial_capital=10000)
+```
+
+## Configuration
+
+### ML Settings
+- `min_probability`: 0.4 (40%)
+- `min_confidence`: 0.5 (50%)
+- `model_dir`: "models/"
+
+### SMC Settings
+- `base_threshold`: 0.001
+- `vol_factor`: 0.006
+- `timeframes`: ["15m", "1h", "4h", "1d", "1w"]
+
+### Backtesting Settings
+- `initial_capital`: 10000
+- `risk_per_trade`: 0.01 (1%)
+- `min_rr_ratio`: 2.0
+"""
+    
+    with open("docs/API.md", "w", encoding="utf-8") as f:
+        f.write(api_docs)
+    
+    print("✅ Documentación API creada")
+
+def main():
+    """Función principal de reestructuración"""
+    print("🚀 Iniciando reestructuración del proyecto...")
+    
+    # Crear directorios
+    create_directories()
+    
+    # Mover archivos
+    move_test_files()
+    
+    # Crear documentación
+    create_improved_readme()
+    create_documentation()
+    
+    print("✅ Reestructuración completada")
+    print("📁 Estructura organizada creada")
+    print("📚 Documentación mejorada")
+
+if __name__ == "__main__":
+    main()

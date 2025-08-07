@@ -90,7 +90,7 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                 "15m": "15m", 
                 "30m": "30m",
                 "1h": "60m", 
-                "4h": "240m", 
+                "4h": "4h", 
                 "1d": "1d",
                 "1w": "1wk"
             }
@@ -254,7 +254,7 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
         "15m": "15m", 
         "30m": "30m",
         "1h": "60m", 
-        "4h": "240m", 
+        "4h": "4h", 
         "1d": "1d",
         "1w": "1wk"
     }
@@ -264,7 +264,29 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
     
     try:
         ticker = yf.Ticker(yahoo_symbol)
+        
+        # Calcular el número correcto de velas según timeframe
+        candles_per_day = {
+            "1m": 1440,    # 24h * 60min
+            "5m": 288,     # 24h * 12
+            "15m": 96,     # 24h * 4
+            "30m": 48,     # 24h * 2
+            "1h": 24,      # 24h
+            "4h": 6,       # 24h / 4
+            "1d": 1,       # 1 día
+            "1w": 1        # 1 semana
+        }
+        
+        max_candles = candles_per_day.get(timeframe, 24) * limit
+        
+        # Limitar a un máximo razonable
+        max_candles = min(max_candles, 1000)
+        
         df = ticker.history(period=f"{limit}d", interval=yahoo_interval)
+        
+        # Limitar el número de filas si es necesario
+        if len(df) > max_candles:
+            df = df.tail(max_candles)
         
         if not df.empty:
             df = df.reset_index()
@@ -361,7 +383,7 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
         "15m": "15m", 
         "30m": "30m",
         "1h": "60m", 
-        "4h": "240m", 
+        "4h": "4h", 
         "1d": "1d",
         "1w": "1wk"
     }
@@ -371,7 +393,29 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     
     try:
         ticker = yf.Ticker(yahoo_symbol)
+        
+        # Calcular el número correcto de velas según timeframe y días
+        candles_per_day = {
+            "1m": 1440,    # 24h * 60min
+            "5m": 288,     # 24h * 12
+            "15m": 96,     # 24h * 4
+            "30m": 48,     # 24h * 2
+            "1h": 24,      # 24h
+            "4h": 6,       # 24h / 4
+            "1d": 1,       # 1 día
+            "1w": 1        # 1 semana
+        }
+        
+        max_candles = candles_per_day.get(timeframe, 24) * days
+        
+        # Limitar a un máximo razonable para evitar sobrecarga
+        max_candles = min(max_candles, 1000)
+        
         df = ticker.history(period=f"{days}d", interval=yahoo_interval)
+        
+        # Limitar el número de filas si es necesario
+        if len(df) > max_candles:
+            df = df.tail(max_candles)
         
         if not df.empty:
             df = df.reset_index()
@@ -473,7 +517,7 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         "15m": "15m", 
         "30m": "30m",
         "1h": "60m", 
-        "4h": "240m", 
+        "4h": "4h", 
         "1d": "1d",
         "1w": "1wk"
     }

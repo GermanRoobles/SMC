@@ -117,6 +117,11 @@ class SMCBacktester:
                        max_duration: int) -> Optional[BacktestTrade]:
         """Simular ejecución de un trade individual"""
         try:
+            # Verificar que signal es un objeto válido
+            if isinstance(signal, str):
+                print(f"Error simulando trade: signal es string, no objeto válido")
+                return None
+            
             # Encontrar índice de entrada
             signal_time = signal.timestamp
             entry_idx = None

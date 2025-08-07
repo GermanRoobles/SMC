@@ -515,7 +515,7 @@ class SMCTradeEngine:
             return 0.5
 
 # Funciones de utilidad para integración
-def get_trade_engine_analysis(df: pd.DataFrame, smc_analysis: Dict) -> Dict:
+def get_trade_engine_analysis(df: pd.DataFrame, smc_analysis: Dict, symbol: str = "BTC/USDT") -> Dict:
     """
     Función principal para obtener análisis del motor de trading
 

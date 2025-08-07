@@ -103,8 +103,8 @@ class MLIntegrationManager:
         except Exception as e:
             print(f"⚠️ Error en inicialización sintética: {e}")
     
-    def get_signal_prediction(self, df: pd.DataFrame, smc_analysis: Dict,
-                            signal_info: Dict = None, use_cache: bool = True) -> MLPrediction:
+    def get_signal_prediction(self, df: pd.DataFrame, smc_analysis: Dict = None,
+                           signal_info: Dict = None, use_cache: bool = True) -> MLPrediction:
         """
         Obtener predicción ML para una señal
         

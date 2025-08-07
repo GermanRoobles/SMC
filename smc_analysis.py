@@ -167,6 +167,21 @@ def run_analysis(df, params=None, timeframe="15m"):
         volatility_label = "HIGH_VOLATILITY"
     else:
         volatility_label = "NORMAL_VOLATILITY"
+    # Determinar estructura de mercado
+    if len(df) >= 20:
+        recent_high = df['high'].tail(20).max()
+        recent_low = df['low'].tail(20).min()
+        current_price = df['close'].iloc[-1]
+        
+        if current_price > recent_high * 0.95:
+            market_structure = "bullish"
+        elif current_price < recent_low * 1.05:
+            market_structure = "bearish"
+        else:
+            market_structure = "neutral"
+    else:
+        market_structure = "neutral"
+    
     return {
         "fvg": smc.fvg(df),
         "orderblocks": detect_orderblocks(df, swing_highs_lows, timeframe),
@@ -176,6 +191,7 @@ def run_analysis(df, params=None, timeframe="15m"):
         "swing_highs_lows": swing_highs_lows,
         "volatility": volatility_label,
         "volatility_pct": volatility_pct,
+        "market_structure": market_structure,
     }
 
 def detect_order_blocks(df, swing_highs_lows=None, timeframe="15m"):

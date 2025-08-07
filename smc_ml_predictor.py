@@ -215,7 +215,7 @@ class SMCMLPredictor:
             }
         }
     
-    def extract_features(self, df: pd.DataFrame, smc_analysis: Dict, 
+    def extract_features(self, df: pd.DataFrame, smc_analysis: Dict = None, 
                         signal_info: Dict = None) -> MLFeatures:
         """
         Extraer características para ML desde datos OHLC y análisis SMC
@@ -231,6 +231,10 @@ class SMCMLPredictor:
         features = MLFeatures()
         
         try:
+            # Validar smc_analysis
+            if smc_analysis is None:
+                smc_analysis = {}
+            
             # Características SMC
             features.fvg_count = len(smc_analysis.get('fvg', [])) if 'fvg' in smc_analysis else 0
             features.ob_count = len(smc_analysis.get('orderblocks', [])) if 'orderblocks' in smc_analysis else 0
@@ -238,7 +242,7 @@ class SMCMLPredictor:
             
             # Contar CHoCH y BOS
             bos_choch_data = smc_analysis.get('bos_choch', pd.DataFrame())
-            if not bos_choch_data.empty and hasattr(bos_choch_data, '__len__'):
+            if bos_choch_data is not None and hasattr(bos_choch_data, '__len__') and len(bos_choch_data) > 0:
                 features.choch_count = len(bos_choch_data) * 0.6  # Aproximación CHoCH
                 features.bos_count = len(bos_choch_data) * 0.4    # Aproximación BOS
             
