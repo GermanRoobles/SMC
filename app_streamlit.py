@@ -837,7 +837,7 @@ else:
         show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
         auto_backtest = st.sidebar.checkbox("Auto Backtest on Signals", value=False)
         st.session_state['auto_backtest'] = auto_backtest
-        show_open_interest = st.sidebar.checkbox("Show Open Interest (Yahoo Finance)", value=False, help="Real open interest overlay on the main chart.")
+    show_open_interest = st.sidebar.checkbox("Show Open Interest (Yahoo Finance)", value=False, help="Real open interest overlay on the main chart.")
     st.sidebar.markdown("### 📅 Historical Analysis")
     enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
     historical_period = st.sidebar.selectbox(
