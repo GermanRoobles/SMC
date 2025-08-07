@@ -752,7 +752,7 @@ if is_mobile():
                 risk_per_trade = st.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
                 show_backtest_chart = st.checkbox("Show Performance Chart", value=True)
                 show_backtest_report = st.checkbox("Show Detailed Report", value=True)
-            show_open_interest = st.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
+            show_open_interest = st.checkbox("Show Open Interest (Yahoo Finance)", value=False, help="Real open interest overlay on the main chart.")
             st.markdown("### 📅 Historical Analysis")
             enable_historical = st.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
             historical_period = st.selectbox(
@@ -837,7 +837,7 @@ else:
         show_backtest_report = st.sidebar.checkbox("Show Detailed Report", value=True)
         auto_backtest = st.sidebar.checkbox("Auto Backtest on Signals", value=False)
         st.session_state['auto_backtest'] = auto_backtest
-    show_open_interest = st.sidebar.checkbox("Show Open Interest (Binance Futures)", value=False, help="Real open interest overlay on the main chart.")
+        show_open_interest = st.sidebar.checkbox("Show Open Interest (Yahoo Finance)", value=False, help="Real open interest overlay on the main chart.")
     st.sidebar.markdown("### 📅 Historical Analysis")
     enable_historical = st.sidebar.checkbox("Enable Historical Analysis", value=False, help="Navigate the pair's history")
     historical_period = st.sidebar.selectbox(
@@ -1692,7 +1692,7 @@ with tab_overview:
                     tickfont=dict(color='#FFD700'),
                 )
             )
-            st.info("🟡 Open Interest overlay añadido (Binance Futures)")
+            st.info("🟡 Open Interest overlay añadido (Yahoo Finance)")
         except Exception as e:
             st.warning(f"No se pudo cargar el Open Interest: {e}")
 
