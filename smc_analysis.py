@@ -6,11 +6,50 @@ __all__ = [
     'detect_orderblocks',
     'detect_liquidity',
 ]
-def detect_fvgs(df):
+def detect_fvgs(df, timeframe="15m"):
     """
-    Wrapper para detectar FVGs usando smc.fvg(df), para compatibilidad con utils_htf.py
+    Detección adaptativa de FVGs según timeframe y volatilidad
     """
-    return smc.fvg(df)
+    base_threshold = {
+        "1m": 0.0005,
+        "5m": 0.001,
+        "15m": 0.002,
+        "1h": 0.005,
+        "4h": 0.008,
+        "1d": 0.01,
+        "1w": 0.02
+    }
+    
+    # Calcular factor de volatilidad relativo
+    volatility_factor = df['high'].std() / df['close'].mean() if df['close'].mean() > 0 else 1
+    threshold = base_threshold.get(timeframe, 0.002) * max(volatility_factor, 0.5)
+    
+    print(f"[FVGS] Timeframe: {timeframe}, Threshold: {threshold:.6f}, VolFactor: {volatility_factor:.4f}")
+    
+    try:
+        fvgs = smc.fvg(df)
+        
+        # Para HTF, aplicar filtros más estrictos
+        if timeframe in ["1d", "1w", "1M"]:
+            # Solo FVGs con gap significativo
+            if hasattr(fvgs, 'Top') and hasattr(fvgs, 'Bottom'):
+                gap_size = (fvgs['Top'] - fvgs['Bottom']).abs()
+                significant_gap = gap_size > (df['close'].mean() * 0.01)  # 1% del precio
+                fvgs = fvgs[significant_gap]
+                print(f"[FVGS][HTF] FVGs con gap significativo: {len(fvgs)}")
+        
+        # Filtrado general por threshold
+        if hasattr(fvgs, 'Top') and hasattr(fvgs, 'Bottom'):
+            mask = fvgs['Top'].notna() & fvgs['Bottom'].notna() & ((fvgs['Top'] - fvgs['Bottom']).abs() > threshold)
+            filtered = fvgs[mask]
+            if filtered.empty:
+                print(f"[FVGS][WARN] No se detectaron FVGs válidos con threshold {threshold:.6f}")
+            return filtered
+        return fvgs
+        
+    except Exception as e:
+        print(f"[FVGS][ERROR] {e}")
+        return smc.fvg(df)
 from smartmoneyconcepts import smc
 import pandas as pd
 import numpy as np
@@ -70,7 +109,10 @@ def detect_orderblocks(df, swing_highs_lows, timeframe="15m"):
         "1m": 0.0005,
         "5m": 0.001,
         "15m": 0.002,
-        "1h": 0.005
+        "1h": 0.005,
+        "4h": 0.008,
+        "1d": 0.01,
+        "1w": 0.02
     }
     volatility_factor = df['high'].std() / df['close'].mean() if df['close'].mean() > 0 else 1
     threshold = base_threshold.get(timeframe, 0.002) * max(volatility_factor, 0.5)

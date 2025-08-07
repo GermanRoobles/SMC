@@ -1797,6 +1797,10 @@ with tab_overview:
             for htf in htf_timeframes:
                 try:
                     fvg_zones, ob_zones, ltf_df = get_htf_gaps_and_obs(symbol, htf=htf, ltf=timeframe)
+                    
+                    # Debug info
+                    st.sidebar.info(f"HTF {htf}: {len(fvg_zones)} FVGs reales, {len(ob_zones)} OBs reales")
+                    
                     # Dibujar FVGs HTF
                     for zone in fvg_zones:
                         fig.add_shape(

@@ -21,7 +21,7 @@ def get_htf_gaps_and_obs(symbol, htf="1w", ltf="4h"):
     print(f"Columnas: {list(htf_df.columns)}  |  Filas: {len(htf_df)}")
 
     from smc_analysis import detect_fvgs, detect_order_blocks
-    htf_fvg = detect_fvgs(htf_df)
+    htf_fvg = detect_fvgs(htf_df, timeframe=htf)
     htf_ob = detect_order_blocks(htf_df)
 
     # Filtrado automático: solo zonas válidas (sin NaN, top != bottom, sin valores nulos)
@@ -29,12 +29,19 @@ def get_htf_gaps_and_obs(symbol, htf="1w", ltf="4h"):
         if df is None or len(df) == 0:
             return df
         df = df.copy()
-        # Para FVG y OB, columnas pueden ser Top/Bottom o high/low
-        top_col = 'Top' if 'Top' in df.columns else ('high' if 'high' in df.columns else None)
-        bottom_col = 'Bottom' if 'Bottom' in df.columns else ('low' if 'low' in df.columns else None)
-        if top_col and bottom_col:
-            df = df[df[top_col].notna() & df[bottom_col].notna()]
-            df = df[df[top_col] != df[bottom_col]]
+        
+        # Para FVG, solo procesar filas con FVG válido
+        if 'FVG' in df.columns:
+            df = df[df['FVG'] != 0]
+            df = df[df['Top'].notna() & df['Bottom'].notna()]
+            df = df[df['Top'] != df['Bottom']]
+        
+        # Para OB, solo procesar filas con OB válido
+        if 'OB' in df.columns:
+            df = df[df['OB'] != 0]
+            df = df[df['Top'].notna() & df['Bottom'].notna()]
+            df = df[df['Top'] != df['Bottom']]
+        
         return df
 
     htf_fvg_valid = filter_valid_zones(htf_fvg)
@@ -53,13 +60,31 @@ def project_zones_to_ltf(zones, ltf_df):
     Mapea zonas de HTF sobre el índice de tiempo del LTF para dibujarlas correctamente
     """
     projected = []
+    if zones is None or zones.empty:
+        return projected
+    
     for _, row in zones.iterrows():
-        zone = {
-            "top": row["Top"] if "Top" in row else row.get("high", None),
-            "bottom": row["Bottom"] if "Bottom" in row else row.get("low", None),
-            "id": row.get("id", f"zone_{_}")
-        }
-        projected.append(zone)
+        # Solo procesar filas con FVG/OB válidos
+        if 'FVG' in row and row['FVG'] != 0:
+            zone = {
+                "top": row["Top"] if "Top" in row and pd.notna(row["Top"]) else None,
+                "bottom": row["Bottom"] if "Bottom" in row and pd.notna(row["Bottom"]) else None,
+                "id": row.get("id", f"fvg_{_}")
+            }
+            # Solo añadir si tiene coordenadas válidas
+            if zone["top"] is not None and zone["bottom"] is not None and zone["top"] != zone["bottom"]:
+                projected.append(zone)
+        elif 'OB' in row and row['OB'] != 0:
+            zone = {
+                "top": row["Top"] if "Top" in row and pd.notna(row["Top"]) else None,
+                "bottom": row["Bottom"] if "Bottom" in row and pd.notna(row["Bottom"]) else None,
+                "id": row.get("id", f"ob_{_}")
+            }
+            # Solo añadir si tiene coordenadas válidas
+            if zone["top"] is not None and zone["bottom"] is not None and zone["top"] != zone["bottom"]:
+                projected.append(zone)
+    
+    print(f"[DEBUG][HTF] Zonas proyectadas: {len(projected)}")
     return projected
 
 def monitor_fvg_alerts(price, fvg_zones, alerted):
