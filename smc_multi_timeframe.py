@@ -20,8 +20,8 @@ class MultiTimeframeAnalyzer:
     """Analizador multi-timeframe para SMC"""
     
     def __init__(self):
-        # Timeframes soportados por Yahoo Finance
-        self.timeframes = ["15m", "1h", "4h", "1d", "1w"]
+        # Timeframes soportados por Yahoo Finance - orden correcto para el layout
+        self.timeframes = ["1w", "1d", "4h", "1h", "15m"]
         self.analysis_cache = {}
         
     def get_multi_timeframe_data(self, symbol: str, days: int = 30) -> Dict[str, pd.DataFrame]:
@@ -89,97 +89,152 @@ class MultiTimeframeAnalyzer:
             return {}
     
     def create_multi_timeframe_dashboard(self, analyses: Dict[str, Dict]) -> go.Figure:
-        """Crear dashboard multi-timeframe"""
+        """Crear dashboard multi-timeframe - LAYOUT COMPLETO"""
         try:
-            # Crear subplots para cada timeframe
+            # Crear subplots: 3 filas x 2 columnas
             fig = make_subplots(
-                rows=len(analyses), cols=1,
-                subplot_titles=[f"Análisis {tf.upper()}" for tf in analyses.keys()],
-                vertical_spacing=0.05,
-                shared_xaxes=True
+                rows=3, cols=2,
+                subplot_titles=["Análisis 1W", "Análisis 1D", "Análisis 4H", "Análisis 1H", "Análisis 15M"],
+                vertical_spacing=0.15,
+                horizontal_spacing=0.1,
+                specs=[[{"secondary_y": False}, {"secondary_y": False}],
+                       [{"secondary_y": False}, {"secondary_y": False}],
+                       [{"colspan": 2, "secondary_y": False}, None]]
             )
             
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-            
-            for i, (tf, analysis_data) in enumerate(analyses.items()):
-                df = analysis_data['data']
-                analysis = analysis_data['analysis']
-                
-                # Candlestick chart
-                fig.add_trace(
-                    go.Candlestick(
-                        x=df['timestamp'],
-                        open=df['open'],
-                        high=df['high'],
-                        low=df['low'],
-                        close=df['close'],
-                        name=f"{tf} OHLC",
-                        showlegend=False
-                    ),
-                    row=i+1, col=1
-                )
-                
-                # Agregar FVGs
-                if 'fvg' in analysis and isinstance(analysis['fvg'], list) and len(analysis['fvg']) > 0:
-                    for fvg in analysis['fvg']:
+            # Agregar 1W (fila 1, columna 1)
+            if "1w" in analyses:
+                df_1w = analyses["1w"]["data"].copy()
+                if not df_1w.empty:
+                    df_1w = df_1w.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+                    df_1w = df_1w.reset_index(drop=True)
+                    
+                    print(f"📊 1W: {len(df_1w)} velas")
+                    
+                    if len(df_1w) > 0:
                         fig.add_trace(
-                            go.Scatter(
-                                x=[fvg['start_time'], fvg['end_time']],
-                                y=[fvg['high'], fvg['high']],
-                                mode='lines',
-                                line=dict(color='green', width=2),
-                                name=f"{tf} FVG High",
+                            go.Candlestick(
+                                x=df_1w['timestamp'],
+                                open=df_1w['open'],
+                                high=df_1w['high'],
+                                low=df_1w['low'],
+                                close=df_1w['close'],
+                                name="1W",
                                 showlegend=False
                             ),
-                            row=i+1, col=1
-                        )
-                        
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[fvg['start_time'], fvg['end_time']],
-                                y=[fvg['low'], fvg['low']],
-                                mode='lines',
-                                line=dict(color='red', width=2),
-                                name=f"{tf} FVG Low",
-                                showlegend=False
-                            ),
-                            row=i+1, col=1
-                        )
-                
-                # Agregar Order Blocks
-                if 'orderblocks' in analysis and isinstance(analysis['orderblocks'], list) and len(analysis['orderblocks']) > 0:
-                    for ob in analysis['orderblocks']:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[ob['start_time'], ob['end_time']],
-                                y=[ob['high'], ob['high']],
-                                mode='lines',
-                                line=dict(color='blue', width=3),
-                                name=f"{tf} OB High",
-                                showlegend=False
-                            ),
-                            row=i+1, col=1
-                        )
-                        
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[ob['start_time'], ob['end_time']],
-                                y=[ob['low'], ob['low']],
-                                mode='lines',
-                                line=dict(color='blue', width=3),
-                                name=f"{tf} OB Low",
-                                showlegend=False
-                            ),
-                            row=i+1, col=1
+                            row=1, col=1
                         )
             
-            # Actualizar layout
+            # Agregar 1D (fila 1, columna 2)
+            if "1d" in analyses:
+                df_1d = analyses["1d"]["data"].copy()
+                if not df_1d.empty:
+                    df_1d = df_1d.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+                    df_1d = df_1d.reset_index(drop=True)
+                    
+                    print(f"📊 1D: {len(df_1d)} velas")
+                    
+                    if len(df_1d) > 0:
+                        fig.add_trace(
+                            go.Candlestick(
+                                x=df_1d['timestamp'],
+                                open=df_1d['open'],
+                                high=df_1d['high'],
+                                low=df_1d['low'],
+                                close=df_1d['close'],
+                                name="1D",
+                                showlegend=False
+                            ),
+                            row=1, col=2
+                        )
+            
+            # Agregar 4H (fila 2, columna 1)
+            if "4h" in analyses:
+                df_4h = analyses["4h"]["data"].copy()
+                if not df_4h.empty:
+                    df_4h = df_4h.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+                    df_4h = df_4h.reset_index(drop=True)
+                    
+                    print(f"📊 4H: {len(df_4h)} velas")
+                    
+                    if len(df_4h) > 0:
+                        fig.add_trace(
+                            go.Candlestick(
+                                x=df_4h['timestamp'],
+                                open=df_4h['open'],
+                                high=df_4h['high'],
+                                low=df_4h['low'],
+                                close=df_4h['close'],
+                                name="4H",
+                                showlegend=False
+                            ),
+                            row=2, col=1
+                        )
+            
+            # Agregar 1H (fila 2, columna 2)
+            if "1h" in analyses:
+                df_1h = analyses["1h"]["data"].copy()
+                if not df_1h.empty:
+                    df_1h = df_1h.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+                    df_1h = df_1h.reset_index(drop=True)
+                    
+                    print(f"📊 1H: {len(df_1h)} velas")
+                    
+                    if len(df_1h) > 0:
+                        fig.add_trace(
+                            go.Candlestick(
+                                x=df_1h['timestamp'],
+                                open=df_1h['open'],
+                                high=df_1h['high'],
+                                low=df_1h['low'],
+                                close=df_1h['close'],
+                                name="1H",
+                                showlegend=False
+                            ),
+                            row=2, col=2
+                        )
+            
+            # Agregar 15M (fila 3, ocupando ambas columnas)
+            if "15m" in analyses:
+                df_15m = analyses["15m"]["data"].copy()
+                if not df_15m.empty:
+                    df_15m = df_15m.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+                    df_15m = df_15m.reset_index(drop=True)
+                    
+                    print(f"📊 15M: {len(df_15m)} velas")
+                    
+                    if len(df_15m) > 0:
+                        fig.add_trace(
+                            go.Candlestick(
+                                x=df_15m['timestamp'],
+                                open=df_15m['open'],
+                                high=df_15m['high'],
+                                low=df_15m['low'],
+                                close=df_15m['close'],
+                                name="15M",
+                                showlegend=False
+                            ),
+                            row=3, col=1
+                        )
+            
+            # Layout completo
             fig.update_layout(
-                title="Multi-Timeframe Analysis Dashboard",
-                height=300 * len(analyses),
+                title="Multi-Timeframe Analysis Dashboard - LAYOUT COMPLETO",
+                height=1000,
                 xaxis_rangeslider_visible=False,
-                showlegend=True
+                showlegend=False,
+                margin=dict(l=50, r=50, t=100, b=50),
+                plot_bgcolor='black',
+                paper_bgcolor='black'
             )
+            
+            # Deshabilitar rangeslider para todos los ejes
+            for i in range(1, 4):
+                for j in range(1, 3):
+                    if i == 3 and j == 2:
+                        continue  # Skip the empty subplot
+                    fig.update_xaxes(rangeslider_visible=False, row=i, col=j)
+                    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='darkgray', row=i, col=j)
             
             return fig
             
@@ -383,7 +438,7 @@ def create_multi_timeframe_analyzer() -> MultiTimeframeAnalyzer:
     return MultiTimeframeAnalyzer()
 
 # Funciones de utilidad para Streamlit
-def display_multi_timeframe_dashboard(symbol: str = "BTC/USDT", days: int = 30):
+def display_multi_timeframe_dashboard(symbol: str = "BTC/USDT", days: int = 3):
     """Mostrar dashboard multi-timeframe en Streamlit"""
     try:
         st.header("📊 Multi-Timeframe Analysis Dashboard")

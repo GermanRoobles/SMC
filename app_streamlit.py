@@ -727,7 +727,7 @@ if is_mobile():
             data_days = st.selectbox(
                 "Data days",
                 [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
-                index=5
+                index=1  # Cambiado de 5 (30 días) a 1 (3 días)
             )
         with col2:
             st.markdown("### Overlays to show")
@@ -815,7 +815,7 @@ else:
     data_days = st.sidebar.selectbox(
         "Data days",
         [1, 3, 5, 7, 14, 30, 60, 90, 180, 365],
-        index=5
+        index=1  # Cambiado de 5 (30 días) a 1 (3 días)
     )
     refresh_interval = st.sidebar.selectbox("Refresh interval (sec)", [0, 30, 60, 120], index=0)
     bot_enabled = st.sidebar.checkbox("Enable SMC Bot", value=True)
@@ -3228,12 +3228,20 @@ with tab_advanced:
     # Multi-Timeframe Analysis
     if multi_timeframe_enabled:
         st.subheader("📊 Multi-Timeframe Analysis Dashboard")
-        display_multi_timeframe_dashboard(symbol, data_days)
+        try:
+            display_multi_timeframe_dashboard(symbol, data_days)
+        except Exception as e:
+            st.error(f"❌ Error en Multi-Timeframe Analysis: {e}")
+            st.info("💡 Intenta con menos días de datos si hay problemas de rendimiento")
     
     # Market Structure Analysis
     if market_structure_enabled:
         st.subheader("🔍 Market Structure Analysis")
-        display_market_structure_analysis(symbol, timeframe, data_days)
+        try:
+            display_market_structure_analysis(symbol, timeframe, data_days)
+        except Exception as e:
+            st.error(f"❌ Error en Market Structure Analysis: {e}")
+            st.info("💡 Intenta con menos días de datos si hay problemas de rendimiento")
     
     # Mostrar mensaje si no hay análisis habilitados
     if not multi_timeframe_enabled and not market_structure_enabled:

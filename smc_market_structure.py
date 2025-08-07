@@ -620,7 +620,7 @@ def create_market_structure_analyzer() -> MarketStructureAnalyzer:
     return MarketStructureAnalyzer()
 
 # Funciones de utilidad para Streamlit
-def display_market_structure_analysis(symbol: str = "BTC/USDT", timeframe: str = "1h", days: int = 30):
+def display_market_structure_analysis(symbol: str = "BTC/USDT", timeframe: str = "1h", days: int = 3):
     """Mostrar análisis de estructura de mercado en Streamlit"""
     try:
         st.header("🔍 Market Structure Analysis")
@@ -680,8 +680,12 @@ def display_market_structure_analysis(symbol: str = "BTC/USDT", timeframe: str =
             if 'key_levels' in structure_analysis:
                 st.write("**Niveles Clave:**")
                 levels_df = pd.DataFrame(structure_analysis['key_levels'][:10])
-                if not levels_df.empty:
+                if not levels_df.empty and 'price_high' in levels_df.columns:
                     st.dataframe(levels_df[['type', 'price_high', 'strength']].head())
+                elif not levels_df.empty and 'price' in levels_df.columns:
+                    st.dataframe(levels_df[['type', 'price', 'strength']].head())
+                else:
+                    st.write("No hay niveles clave disponibles")
             
             # Market Phases
             if 'market_phases' in structure_analysis:

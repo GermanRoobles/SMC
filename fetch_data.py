@@ -391,6 +391,11 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     yahoo_symbol = ymap.get(symbol, symbol.replace("/", "-"))
     yahoo_interval = interval_map.get(timeframe, timeframe)
     
+    print(f"🔍 DEBUGGING YAHOO FINANCE:")
+    print(f"   📊 Símbolo: {symbol} -> {yahoo_symbol}")
+    print(f"   📊 Timeframe: {timeframe} -> {yahoo_interval}")
+    print(f"   📊 Días solicitados: {days}")
+    
     try:
         ticker = yf.Ticker(yahoo_symbol)
         
@@ -411,11 +416,23 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
         # Limitar a un máximo razonable para evitar sobrecarga
         max_candles = min(max_candles, 1000)
         
+        print(f"   📊 Velas calculadas: {max_candles}")
+        print(f"   📊 Período solicitado: {days}d")
+        
         df = ticker.history(period=f"{days}d", interval=yahoo_interval)
+        
+        print(f"   📊 Datos obtenidos de Yahoo: {len(df)} filas")
+        print(f"   📊 Columnas Yahoo: {list(df.columns)}")
+        print(f"   📊 Índice Yahoo: {type(df.index)}")
+        print(f"   📊 Primeras 3 filas Yahoo:")
+        print(df.head(3))
+        print(f"   📊 Últimas 3 filas Yahoo:")
+        print(df.tail(3))
         
         # Limitar el número de filas si es necesario
         if len(df) > max_candles:
             df = df.tail(max_candles)
+            print(f"   📊 Datos limitados a: {len(df)} filas")
         
         if not df.empty:
             df = df.reset_index()
@@ -423,6 +440,8 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = ['_'.join([str(i) for i in col if i]) for col in df.columns.values]
             df.columns = [str(col).lower() for col in df.columns]
+            
+            print(f"   📊 Columnas después de limpiar: {list(df.columns)}")
             
             # Extract timestamp correctly
             if 'datetime' in df.columns:
@@ -439,6 +458,10 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
                 df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
             else:
                 df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+            
+            print(f"   📊 Fechas únicas después de procesar:")
+            unique_dates = df['timestamp'].dt.date.unique()
+            print(f"   📊 {len(unique_dates)} fechas: {sorted(unique_dates)}")
             
             # Map price columns correctly
             price_mapping = {
