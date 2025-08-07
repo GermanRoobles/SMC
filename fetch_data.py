@@ -1,4 +1,6 @@
 import os
+from proxy_config import PROXY_CONFIG
+
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'data_cache')
 
 def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
@@ -27,12 +29,12 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
         end_dt = pd.Timestamp(end_dt).tz_localize('UTC')
     else:
         end_dt = pd.Timestamp(end_dt).tz_convert('UTC')
-    # Detect provider: all crypto symbols use Binance by default
+    # Detect provider: use Yahoo by default for better cloud compatibility
     binance_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT", "XRP/USDT", "FARTCOIN/USDT", "SUI/USDT"]
     if provider_hint:
         provider = provider_hint
     else:
-        provider = 'binance'
+        provider = 'yahoo'  # Cambiado a Yahoo por defecto
 
     # --- In-memory session cache for fast incremental updates ---
     session_key = f"ohlcv_{symbol.replace('/', '_')}_{timeframe}"
@@ -84,7 +86,16 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
         else:
             import yfinance as yf
             interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "4h": "240m", "1d": "1d"}
-            ymap = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "XAU/USD": "XAUUSD=X", "SP500": "^GSPC"}
+            ymap = {
+                "EUR/USD": "EURUSD=X", 
+                "GBP/USD": "GBPUSD=X", 
+                "XAU/USD": "XAUUSD=X", 
+                "SP500": "^GSPC",
+                "BTC/USDT": "BTC-USD",
+                "ETH/USDT": "ETH-USD",
+                "SOL/USDT": "SOL-USD",
+                "XRP/USDT": "XRP-USD"
+            }
             yf_symbol = ymap.get(symbol, symbol)
             yf_interval = interval_map.get(timeframe, "15m")
             df = yf.download(yf_symbol, start=rng_start, end=rng_end + timedelta(days=1), interval=yf_interval, progress=False)
@@ -170,8 +181,10 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
     Returns:
         DataFrame con datos OHLC
     """
-    # Todos los símbolos usan Binance por defecto
-    exchange = ccxt.binance()
+    # Configurar proxy para Binance
+    exchange = ccxt.binance({
+        'proxies': PROXY_CONFIG
+    })
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -189,7 +202,7 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     Returns:
         DataFrame con datos OHLC extendidos
     """
-    # Todos los símbolos usan Binance por defecto
+    # Configurar proxy para Binance
     timeframe_minutes = {
         '1m': 1,
         '5m': 5,
@@ -205,7 +218,9 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     total_limit = candles_per_day * days
     total_limit = min(total_limit, 1000)
     print(f"📊 Obteniendo {total_limit} velas para {days} días en {timeframe}")
-    exchange = ccxt.binance()
+    exchange = ccxt.binance({
+        'proxies': PROXY_CONFIG
+    })
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=total_limit)
     df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -228,7 +243,9 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         DataFrame con todas las velas en el rango
     """
     try:
-        exchange = ccxt.binance()
+        exchange = ccxt.binance({
+            'proxies': PROXY_CONFIG
+        })
         all_ohlcv = []
         since_ms = int(since.timestamp() * 1000) if isinstance(since, datetime) else since
         until_ms = int(until.timestamp() * 1000) if isinstance(until, datetime) else until

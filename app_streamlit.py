@@ -9,6 +9,12 @@ import requests
 TELEGRAM_TOKEN = "7861899054:AAG0rpHiCwIPOu0o1C_7BnlUCnjD-ckew2k"
 TELEGRAM_CHAT_ID = "-1002755466186"
 
+# Configuración de Proxy para Binance
+PROXY_CONFIG = {
+    'http': 'http://proxy:8080',  # Cambiar por tu proxy
+    'https': 'http://proxy:8080'  # Cambiar por tu proxy
+}
+
 def send_telegram_alert(message: str):
     """Send a message to Telegram via bot API."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID or '<' in TELEGRAM_TOKEN:
