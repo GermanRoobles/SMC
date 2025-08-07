@@ -1,5 +1,4 @@
 import os
-from proxy_config import PROXY_CONFIG
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'data_cache')
 
@@ -181,10 +180,8 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
     Returns:
         DataFrame con datos OHLC
     """
-    # Configurar proxy para Binance
-    exchange = ccxt.binance({
-        'proxies': PROXY_CONFIG
-    })
+    # Configurar Binance (sin proxy)
+    exchange = ccxt.binance()
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -202,7 +199,7 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     Returns:
         DataFrame con datos OHLC extendidos
     """
-    # Configurar proxy para Binance
+    # Configurar Binance (sin proxy)
     timeframe_minutes = {
         '1m': 1,
         '5m': 5,
@@ -218,9 +215,7 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
     total_limit = candles_per_day * days
     total_limit = min(total_limit, 1000)
     print(f"📊 Obteniendo {total_limit} velas para {days} días en {timeframe}")
-    exchange = ccxt.binance({
-        'proxies': PROXY_CONFIG
-    })
+    exchange = ccxt.binance()
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=total_limit)
     df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -243,9 +238,7 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
         DataFrame con todas las velas en el rango
     """
     try:
-        exchange = ccxt.binance({
-            'proxies': PROXY_CONFIG
-        })
+        exchange = ccxt.binance()
         all_ohlcv = []
         since_ms = int(since.timestamp() * 1000) if isinstance(since, datetime) else since
         until_ms = int(until.timestamp() * 1000) if isinstance(until, datetime) else until
