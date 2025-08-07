@@ -84,7 +84,16 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
             df = get_ohlcv_full(symbol, timeframe, since=rng_start, until=rng_end)
         else:
             import yfinance as yf
-            interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "4h": "240m", "1d": "1d"}
+            interval_map = {
+                "1m": "1m", 
+                "5m": "5m", 
+                "15m": "15m", 
+                "30m": "30m",
+                "1h": "60m", 
+                "4h": "240m", 
+                "1d": "1d",
+                "1w": "1wk"
+            }
             ymap = {
                 "EUR/USD": "EURUSD=X", 
                 "GBP/USD": "GBPUSD=X", 
@@ -100,9 +109,12 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
             df = yf.download(yf_symbol, start=rng_start, end=rng_end + timedelta(days=1), interval=yf_interval, progress=False)
             if not df.empty:
                 df = df.reset_index()
+                # Handle MultiIndex columns from Yahoo Finance
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = ['_'.join([str(i) for i in col if i]) for col in df.columns.values]
                 df.columns = [str(col).lower() for col in df.columns]
+                
+                # Extract timestamp correctly
                 if 'datetime' in df.columns:
                     df['timestamp'] = pd.to_datetime(df['datetime'])
                 elif 'date' in df.columns:
@@ -111,26 +123,65 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                     df['timestamp'] = pd.to_datetime(df['index'])
                 else:
                     df['timestamp'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-                for col in ['open', 'high', 'low', 'close']:
-                    if col not in df.columns:
-                        candidates = [c for c in df.columns if c.startswith(col)]
-                        if candidates:
-                            df[col] = df[candidates[0]]
+                
+                # Ensure timestamp is UTC
+                if df['timestamp'].dt.tz is None:
+                    df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+                else:
+                    df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+                
+                # Map price columns correctly
+                price_mapping = {
+                    'open': ['open', 'open_'],
+                    'high': ['high', 'high_'],
+                    'low': ['low', 'low_'],
+                    'close': ['close', 'close_']
+                }
+                
+                for target_col, possible_cols in price_mapping.items():
+                    if target_col not in df.columns:
+                        for col in possible_cols:
+                            if col in df.columns:
+                                df[target_col] = df[col]
+                                break
+                
+                # Handle volume
                 if 'volume' not in df.columns:
-                    df['volume'] = 0.0
+                    volume_candidates = [c for c in df.columns if 'volume' in c.lower()]
+                    if volume_candidates:
+                        df['volume'] = df[volume_candidates[0]]
+                    else:
+                        df['volume'] = 0.0
+                
+                # Validate required columns
                 required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 missing = [col for col in ['open', 'high', 'low', 'close'] if col not in df.columns]
                 if missing:
                     print(f"❌ Missing required price columns from Yahoo Finance for {symbol}: {missing}")
                     continue
+                
+                # Select only required columns and ensure proper order
                 df = df[required_cols]
+                
+                # Remove duplicates based on timestamp
+                df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
         if not df.empty:
             new_data.append(df)
 
     # Merge all and clean duplicates
     all_data = pd.concat([cache_df] + new_data, ignore_index=True)
     if not all_data.empty:
+        # Remove duplicates and ensure proper sorting
         all_data = all_data.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+        
+        # Additional validation for Yahoo Finance data
+        if provider == 'yahoo':
+            # Remove any rows with invalid timestamps
+            all_data = all_data[all_data['timestamp'].notna()]
+            # Ensure all price columns are numeric
+            for col in ['open', 'high', 'low', 'close']:
+                all_data[col] = pd.to_numeric(all_data[col], errors='coerce')
+            all_data = all_data.dropna(subset=['open', 'high', 'low', 'close'])
         # Ensure tz-awareness matches for filtering
         if hasattr(all_data['timestamp'], 'dt') and all_data['timestamp'].dt.tz is not None:
             # If timestamps are tz-aware, localize/convert start_dt and end_dt to UTC
