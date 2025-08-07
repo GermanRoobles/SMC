@@ -120,7 +120,7 @@ class MultiTimeframeAnalyzer:
                 )
                 
                 # Agregar FVGs
-                if 'fvg' in analysis and analysis['fvg']:
+                if 'fvg' in analysis and isinstance(analysis['fvg'], list) and len(analysis['fvg']) > 0:
                     for fvg in analysis['fvg']:
                         fig.add_trace(
                             go.Scatter(
@@ -147,7 +147,7 @@ class MultiTimeframeAnalyzer:
                         )
                 
                 # Agregar Order Blocks
-                if 'orderblocks' in analysis and analysis['orderblocks']:
+                if 'orderblocks' in analysis and isinstance(analysis['orderblocks'], list) and len(analysis['orderblocks']) > 0:
                     for ob in analysis['orderblocks']:
                         fig.add_trace(
                             go.Scatter(
@@ -270,26 +270,28 @@ class MultiTimeframeAnalyzer:
         signals = []
         
         # Extraer señales de FVGs
-        if 'fvg' in analysis:
+        if 'fvg' in analysis and isinstance(analysis['fvg'], list):
             for fvg in analysis['fvg']:
-                signals.append({
-                    'type': 'FVG',
-                    'timeframe': timeframe,
-                    'timestamp': fvg['start_time'],
-                    'price': fvg['high'],
-                    'direction': 'bullish' if fvg['high'] > fvg['low'] else 'bearish'
-                })
+                if isinstance(fvg, dict) and 'start_time' in fvg and 'high' in fvg and 'low' in fvg:
+                    signals.append({
+                        'type': 'FVG',
+                        'timeframe': timeframe,
+                        'timestamp': fvg['start_time'],
+                        'price': fvg['high'],
+                        'direction': 'bullish' if fvg['high'] > fvg['low'] else 'bearish'
+                    })
         
         # Extraer señales de Order Blocks
-        if 'orderblocks' in analysis:
+        if 'orderblocks' in analysis and isinstance(analysis['orderblocks'], list):
             for ob in analysis['orderblocks']:
-                signals.append({
-                    'type': 'OB',
-                    'timeframe': timeframe,
-                    'timestamp': ob['start_time'],
-                    'price': ob['high'],
-                    'direction': 'bullish' if ob['high'] > ob['low'] else 'bearish'
-                })
+                if isinstance(ob, dict) and 'start_time' in ob and 'high' in ob and 'low' in ob:
+                    signals.append({
+                        'type': 'OB',
+                        'timeframe': timeframe,
+                        'timestamp': ob['start_time'],
+                        'price': ob['high'],
+                        'direction': 'bullish' if ob['high'] > ob['low'] else 'bearish'
+                    })
         
         return signals
     
@@ -419,17 +421,17 @@ def display_multi_timeframe_dashboard(symbol: str = "BTC/USDT", days: int = 30):
             # Mostrar dashboard principal
             st.subheader("📊 Análisis Multi-Timeframe")
             dashboard_fig = analyzer.create_multi_timeframe_dashboard(analyses)
-            st.plotly_chart(dashboard_fig, use_container_width=True)
+            st.plotly_chart(dashboard_fig, use_container_width=True, key="multi_timeframe_dashboard")
             
             # Mostrar comparación de timeframes
             st.subheader("🔄 Comparación de Timeframes")
             comparison_fig = analyzer.create_timeframe_comparison_chart(analyses)
-            st.plotly_chart(comparison_fig, use_container_width=True)
+            st.plotly_chart(comparison_fig, use_container_width=True, key="timeframe_comparison")
             
             # Mostrar matriz de confirmación
             st.subheader("✅ Matriz de Confirmación de Señales")
             confirmation_fig = analyzer.create_signal_confirmation_chart(analyses)
-            st.plotly_chart(confirmation_fig, use_container_width=True)
+            st.plotly_chart(confirmation_fig, use_container_width=True, key="signal_confirmation")
             
             # Mostrar niveles clave
             st.subheader("🎯 Niveles Clave Multi-Timeframe")

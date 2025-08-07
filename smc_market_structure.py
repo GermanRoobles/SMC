@@ -558,47 +558,50 @@ class MarketStructureAnalyzer:
             )
             
             # Agregar niveles clave
-            if 'key_levels' in structure_analysis:
+            if 'key_levels' in structure_analysis and isinstance(structure_analysis['key_levels'], list):
                 for level in structure_analysis['key_levels'][:10]:  # Top 10
-                    color = 'green' if level['type'] in ['FVG', 'Support'] else 'red'
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[df['timestamp'].iloc[0], df['timestamp'].iloc[-1]],
-                            y=[level['price_high'], level['price_high']],
-                            mode='lines',
-                            line=dict(color=color, width=2, dash='dash'),
-                            name=f"{level['type']} {level['price_high']:.2f}"
-                        ),
-                        row=1, col=1
-                    )
+                    if isinstance(level, dict) and 'price_high' in level:
+                        color = 'green' if level['type'] in ['FVG', 'Support'] else 'red'
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[df['timestamp'].iloc[0], df['timestamp'].iloc[-1]],
+                                y=[level['price_high'], level['price_high']],
+                                mode='lines',
+                                line=dict(color=color, width=2, dash='dash'),
+                                name=f"{level['type']} {level['price_high']:.2f}"
+                            ),
+                            row=1, col=1
+                        )
             
             # Chart de niveles clave
-            if 'key_levels' in structure_analysis:
+            if 'key_levels' in structure_analysis and isinstance(structure_analysis['key_levels'], list):
                 levels_df = pd.DataFrame(structure_analysis['key_levels'])
-                fig.add_trace(
-                    go.Scatter(
-                        x=levels_df['timestamp'],
-                        y=levels_df['price_high'],
-                        mode='markers',
-                        marker=dict(size=8, color='red'),
-                        name='Niveles Clave'
-                    ),
-                    row=2, col=1
-                )
+                if not levels_df.empty and 'price_high' in levels_df.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=levels_df['timestamp'],
+                            y=levels_df['price_high'],
+                            mode='markers',
+                            marker=dict(size=8, color='red'),
+                            name='Niveles Clave'
+                        ),
+                        row=2, col=1
+                    )
             
             # Chart de fases del mercado
-            if 'market_phases' in structure_analysis:
+            if 'market_phases' in structure_analysis and isinstance(structure_analysis['market_phases'], list):
                 phases_df = pd.DataFrame(structure_analysis['market_phases'])
-                fig.add_trace(
-                    go.Scatter(
-                        x=phases_df['timestamp'],
-                        y=phases_df['price'],
-                        mode='markers',
-                        marker=dict(size=6, color='blue'),
-                        name='Fases del Mercado'
-                    ),
-                    row=3, col=1
-                )
+                if not phases_df.empty and 'price' in phases_df.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=phases_df['timestamp'],
+                            y=phases_df['price'],
+                            mode='markers',
+                            marker=dict(size=6, color='blue'),
+                            name='Fases del Mercado'
+                        ),
+                        row=3, col=1
+                    )
             
             fig.update_layout(
                 title="Market Structure Analysis",
@@ -661,7 +664,7 @@ def display_market_structure_analysis(symbol: str = "BTC/USDT", timeframe: str =
             # Mostrar chart principal
             st.subheader("📊 Market Structure Chart")
             chart_fig = analyzer.create_market_structure_chart(df, structure_analysis)
-            st.plotly_chart(chart_fig, use_container_width=True)
+            st.plotly_chart(chart_fig, use_container_width=True, key="market_structure_chart")
             
             # Mostrar detalles de estructura
             st.subheader("🏗️ Estructura Detallada")
