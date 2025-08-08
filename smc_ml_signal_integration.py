@@ -33,6 +33,8 @@ class MLSignalIntegration:
         self.ml_manager = get_ml_manager()
         self.last_signal_time = None
         self.signal_cooldown_minutes = 15  # Cooldown entre señales
+        self.last_prediction: Optional[Dict] = None
+        self.prediction_history: List[Dict] = []
         
         logger.info("🔗 ML Signal Integration inicializada")
     
@@ -79,6 +81,18 @@ class MLSignalIntegration:
                     'confidence': 0.70,
                     'recommendation': 'BUY'
                 }
+            # Guardar última predicción para UI
+            self.last_prediction = ml_prediction.copy()
+            try:
+                self.prediction_history.append({
+                    'time': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                    **ml_prediction
+                })
+                # Limitar historial
+                if len(self.prediction_history) > 200:
+                    self.prediction_history = self.prediction_history[-200:]
+            except Exception:
+                pass
             
             if not ml_prediction:
                 logger.warning("❌ No se pudo obtener predicción ML")
@@ -385,12 +399,55 @@ class MLSignalIntegration:
                 'integration_status': 'active',
                 'last_signal_time': self.last_signal_time.strftime('%Y-%m-%d %H:%M:%S') if self.last_signal_time else None,
                 'cooldown_remaining_minutes': self._get_cooldown_remaining(),
-                'total_features_used': len(self._prepare_ml_features(pd.DataFrame(), {}, 100.0)),
+                # Evitar llamar a preparación de features con DF vacío para no emitir warnings
+                'total_features_used': len(self._prepare_ml_features(self._get_last_data_sample(), {}, 100.0)) if self._has_recent_data() else 0,
             }
             
         except Exception as e:
             logger.error(f"❌ Error obteniendo estadísticas de integración: {str(e)}")
             return {'error': str(e)}
+
+    def _has_recent_data(self) -> bool:
+        """Indica si tenemos alguna señal previa para inferir estructura de features"""
+        try:
+            return len(self.signal_generator.signal_history) > 0
+        except Exception:
+            return False
+
+    def _get_last_data_sample(self) -> pd.DataFrame:
+        """Construye un pequeño DataFrame ficticio con columnas mínimas si no hay datos reales"""
+        try:
+            # Si no hay historial, crear un sample mínimo de 20 filas con columnas requeridas
+            if not self._has_recent_data():
+                import pandas as pd
+                import numpy as np
+                now = pd.Timestamp.utcnow().tz_localize('UTC')
+                ts = pd.date_range(end=now, periods=20, freq='15T')
+                return pd.DataFrame({
+                    'timestamp': ts,
+                    'open': np.linspace(100, 101, len(ts)),
+                    'high': np.linspace(100.5, 101.5, len(ts)),
+                    'low': np.linspace(99.5, 100.5, len(ts)),
+                    'close': np.linspace(100, 101, len(ts)),
+                    'volume': np.ones(len(ts))
+                })
+            # Si existe historia, intentar derivar columnas desde la última señal formateada no es trivial.
+            # Retornamos un DF mínimo igualmente, ya que solo se usa para contar keys de features.
+            else:
+                import pandas as pd
+                import numpy as np
+                now = pd.Timestamp.utcnow().tz_localize('UTC')
+                ts = pd.date_range(end=now, periods=20, freq='15T')
+                return pd.DataFrame({
+                    'timestamp': ts,
+                    'open': np.linspace(100, 101, len(ts)),
+                    'high': np.linspace(100.5, 101.5, len(ts)),
+                    'low': np.linspace(99.5, 100.5, len(ts)),
+                    'close': np.linspace(100, 101, len(ts)),
+                    'volume': np.ones(len(ts))
+                })
+        except Exception:
+            return pd.DataFrame()
     
     def _get_cooldown_remaining(self) -> int:
         """Obtener minutos restantes de cooldown"""

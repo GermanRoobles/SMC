@@ -2789,14 +2789,30 @@ st.sidebar.info("📈 **Logistic Regression:** 86% accuracy")
 # Predicción de ejemplo
 st.sidebar.markdown("### 🔮 Última Predicción")
 pred_col1, pred_col2 = st.sidebar.columns(2)
-
-with pred_col1:
-    st.metric("Probabilidad", "89.2%", delta="12.5%")
-
-with pred_col2:
-    st.metric("Confianza", "94.1%", delta="8.3%")
-
-st.sidebar.success("💡 **Recomendación:** STRONG_BUY")
+try:
+    from smc_ml_signal_integration import get_ml_signal_integration
+    _integration_for_ui = get_ml_signal_integration()
+    _last_pred = getattr(_integration_for_ui, 'last_prediction', None)
+    if _last_pred:
+        prob_pct = f"{_last_pred.get('probability', 0)*100:.1f}%"
+        conf_pct = f"{_last_pred.get('confidence', 0)*100:.1f}%"
+        with pred_col1:
+            st.metric("Probabilidad", prob_pct)
+        with pred_col2:
+            st.metric("Confianza", conf_pct)
+        st.sidebar.success(f"💡 **Recomendación:** {_last_pred.get('recommendation', 'HOLD')}")
+    else:
+        with pred_col1:
+            st.metric("Probabilidad", "-")
+        with pred_col2:
+            st.metric("Confianza", "-")
+        st.sidebar.info("Aún no hay predicción reciente")
+except Exception:
+    with pred_col1:
+        st.metric("Probabilidad", "-")
+    with pred_col2:
+        st.metric("Confianza", "-")
+    st.sidebar.info("Aún no hay predicción reciente")
 
 # Detalles expandibles
 with st.sidebar.expander("📋 Ver Detalles Técnicos ML"):
@@ -2827,7 +2843,7 @@ try:
     if manager.is_initialized:
         stats = manager.get_model_stats()
         if stats.get('is_trained'):
-            st.sidebar.info(f"🔄 **Datos reales:** {stats.get('training_samples', 0)} muestras")
+            st.sidebar.info(f"📝 **Señales registradas para entrenamiento:** {stats.get('training_samples', 0)}")
 except:
     pass  # Usar valores por defecto si hay error
 
@@ -2861,7 +2877,9 @@ if st.sidebar.button("🚀 Generar Señal ML", help="Generar nueva señal ML com
         if 'data' not in st.session_state or st.session_state.data.empty:
             st.sidebar.info("🔄 Obteniendo datos frescos...")
             from fetch_data import get_ohlcv_extended
-            fresh_data = get_ohlcv_extended(current_symbol, current_timeframe, days=7)
+            # Usar el 'data_days' seleccionado en los controles de la app si está disponible; fallback 7
+            days_to_fetch = data_days if 'data_days' in locals() else 7
+            fresh_data = get_ohlcv_extended(current_symbol, current_timeframe, days=days_to_fetch)
             if not fresh_data.empty:
                 st.session_state.data = fresh_data
                 st.sidebar.success(f"✅ Datos obtenidos: {fresh_data.shape[0]} filas")
@@ -2893,29 +2911,34 @@ if st.sidebar.button("🚀 Generar Señal ML", help="Generar nueva señal ML com
                 fvg_data = smc_analysis['fvg']
                 ob_data = smc_analysis['ob'] 
                 liq_data = smc_analysis['liquidity']
-                
-                # Contar elementos válidos (no filas totales)
-                if hasattr(fvg_data, 'shape') and fvg_data.shape[0] > 0:
-                    # Debug: mostrar información del DataFrame
-                    st.sidebar.info(f"🔍 Debug FVG: shape={fvg_data.shape}, columns={list(fvg_data.columns) if hasattr(fvg_data, 'columns') else 'None'}")
-                    
-                    # Para FVGs, contar elementos reales detectados
-                    # Los logs muestran 74, pero el DataFrame tiene 672 filas
-                    # Necesito contar solo los elementos válidos
-                    if hasattr(fvg_data, 'columns') and 'FVG' in fvg_data.columns:
-                        # Usar el número real de logs (74) como referencia
-                        fvg_count = 74  # Usar el número real de logs
-                        st.sidebar.info(f"🔍 Debug FVG: usando número real de logs: {fvg_count}")
-                    else:
-                        # Fallback: usar el número de logs (74)
-                        fvg_count = 74
-                        st.sidebar.info(f"🔍 Debug FVG: usando fallback: {fvg_count}")
-                else:
+
+                # Conteo robusto basado en columnas estándar
+                fvg_count = 0
+                try:
+                    if hasattr(fvg_data, 'shape') and fvg_data.shape[0] > 0:
+                        if hasattr(fvg_data, 'columns') and 'FVG' in fvg_data.columns:
+                            fvg_count = int((fvg_data['FVG'] != 0).sum())
+                        else:
+                            fvg_count = int(fvg_data.shape[0])
+                except Exception:
                     fvg_count = 0
-                    st.sidebar.info(f"🔍 Debug FVG: DataFrame vacío")
-                    
-                ob_count = len(ob_data) if hasattr(ob_data, '__len__') and not ob_data.empty else 0
-                liq_count = len(liq_data) if hasattr(liq_data, '__len__') and not liq_data.empty else 0
+
+                ob_count = 0
+                try:
+                    if hasattr(ob_data, 'shape') and ob_data.shape[0] > 0:
+                        if hasattr(ob_data, 'columns') and 'OB' in ob_data.columns:
+                            ob_count = int((ob_data['OB'] != 0).sum())
+                        else:
+                            ob_count = int(ob_data.shape[0])
+                except Exception:
+                    ob_count = 0
+
+                liq_count = 0
+                try:
+                    if hasattr(liq_data, 'shape') and liq_data.shape[0] > 0:
+                        liq_count = int(liq_data.shape[0])
+                except Exception:
+                    liq_count = 0
                 
                 st.sidebar.info(f"🔍 SMC: {fvg_count} FVG, {ob_count} OB, {liq_count} LIQ")
             except Exception as e:

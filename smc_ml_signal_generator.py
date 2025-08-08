@@ -169,6 +169,11 @@ class MLSignalGenerator:
             # Determinar tipo y fuerza de señal
             signal_type = self._determine_signal_type(ml_prediction)
             signal_strength = self._determine_signal_strength(ml_prediction)
+
+            # Si la recomendación es neutra/evitar, no generamos señal accionable
+            if signal_type in [SignalType.HOLD, SignalType.AVOID]:
+                logger.info("❌ Señal descartada: tipo HOLD/AVOID")
+                return None
             
             # Calcular ATR y volatilidad
             atr_value = self._calculate_atr(data)

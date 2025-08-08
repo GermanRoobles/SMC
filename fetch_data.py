@@ -90,7 +90,7 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                 "15m": "15m", 
                 "30m": "30m",
                 "1h": "60m", 
-                "4h": "4h", 
+                "4h": "60m", 
                 "1d": "1d",
                 "1w": "1wk"
             }
@@ -106,7 +106,15 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
             }
             yf_symbol = ymap.get(symbol, symbol)
             yf_interval = interval_map.get(timeframe, "15m")
-            df = yf.download(yf_symbol, start=rng_start, end=rng_end + timedelta(days=1), interval=yf_interval, progress=False)
+            # Silenciar logs ruidosos de yfinance temporalmente
+            import logging as _py_logging
+            _yf_logger = _py_logging.getLogger("yfinance")
+            _prev_level = _yf_logger.level
+            _yf_logger.setLevel(_py_logging.ERROR)
+            try:
+                df = yf.download(yf_symbol, start=rng_start, end=rng_end + timedelta(days=1), interval=yf_interval, progress=False)
+            finally:
+                _yf_logger.setLevel(_prev_level)
             if not df.empty:
                 df = df.reset_index()
                 # Handle MultiIndex columns from Yahoo Finance
@@ -164,6 +172,20 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
                 
                 # Select only required columns and ensure proper order
                 df = df[required_cols]
+
+                # Resample to 4H if requested timeframe is 4h and data came as 60m
+                if timeframe == "4h" and yf_interval == "60m":
+                    tmp = df.copy()
+                    tmp = tmp.set_index('timestamp')
+                    ohlc = {
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }
+                    tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                    df = tmp
                 
                 # Remove duplicates based on timestamp
                 df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
@@ -217,6 +239,7 @@ def get_ohlcv_with_cache(symbol, timeframe, start, end, provider_hint=None):
     return pd.DataFrame()
 import ccxt
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 import time
 import yfinance as yf
@@ -254,7 +277,7 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
         "15m": "15m", 
         "30m": "30m",
         "1h": "60m", 
-        "4h": "4h", 
+        "4h": "60m", 
         "1d": "1d",
         "1w": "1wk"
     }
@@ -282,7 +305,15 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
         # Limitar a un máximo razonable
         max_candles = min(max_candles, 1000)
         
-        df = ticker.history(period=f"{limit}d", interval=yahoo_interval)
+        # Silenciar logs ruidosos de yfinance
+        import logging as _py_logging
+        _yf_logger = _py_logging.getLogger("yfinance")
+        _prev_level = _yf_logger.level
+        _yf_logger.setLevel(_py_logging.ERROR)
+        try:
+            df = ticker.history(period=f"{limit}d", interval=yahoo_interval)
+        finally:
+            _yf_logger.setLevel(_prev_level)
         
         # Limitar el número de filas si es necesario
         if len(df) > max_candles:
@@ -338,8 +369,75 @@ def get_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=100):
             required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df = df[required_cols]
             
+            # Resample to 4H if requested timeframe is 4h and data came as 60m
+            if timeframe == "4h" and yahoo_interval == "60m":
+                tmp = df.copy()
+                tmp = tmp.set_index('timestamp')
+                ohlc = {
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }
+                tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                df = tmp
+
+            # Fallback: asegurar alineación a 4H mediante floor+groupby si aún no está alineado
+            if timeframe == "4h":
+                try:
+                    diffs_h = df['timestamp'].diff().dropna().dt.total_seconds() / 3600.0
+                    frac_4h = (np.isclose(diffs_h, 4.0, atol=0.25)).mean() if len(diffs_h) > 0 else 1.0
+                    if frac_4h < 0.7:
+                        df['timestamp'] = df['timestamp'].dt.floor('4H')
+                        df = (
+                            df.groupby('timestamp', as_index=False)
+                              .agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                              .dropna()
+                              .sort_values('timestamp')
+                              .reset_index(drop=True)
+                        )
+                except Exception:
+                    pass
+
+            # Resample to 4H if requested timeframe is 4h and data came as 60m
+            if timeframe == "4h" and yahoo_interval == "60m":
+                tmp = df.copy()
+                tmp = tmp.set_index('timestamp')
+                ohlc = {
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }
+                tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                df = tmp
+            
             # Remove duplicates based on timestamp
             df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+
+            # Fallback de alineación 4H (tras la limpieza y limitación)
+            if timeframe == "4h":
+                try:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    # Si aún hay 60m, agregamos a 4H
+                    if yahoo_interval == "60m":
+                        tmp = df.copy().set_index('timestamp')
+                        ohlc = {'open':'first','high':'max','low':'min','close':'last','volume':'sum'}
+                        tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                        df = tmp
+                    # Asegurar floor a 4H y agregación final
+                    df['timestamp'] = df['timestamp'].dt.floor('4H')
+                    df = (
+                        df.groupby('timestamp', as_index=False)
+                          .agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                          .dropna()
+                          .sort_values('timestamp')
+                          .reset_index(drop=True)
+                    )
+                except Exception:
+                    pass
             
             return df
         else:
@@ -383,7 +481,7 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
         "15m": "15m", 
         "30m": "30m",
         "1h": "60m", 
-        "4h": "4h", 
+        "4h": "60m", 
         "1d": "1d",
         "1w": "1wk"
     }
@@ -430,9 +528,16 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
         print(df.tail(3))
         
         # Limitar el número de filas si es necesario
-        if len(df) > max_candles:
-            df = df.tail(max_candles)
-            print(f"   📊 Datos limitados a: {len(df)} filas")
+        # Para 4h (obtenido como 60m), necesitamos 4x velas de 1h para cada vela de 4h
+        if timeframe == "4h" and yahoo_interval == "60m":
+            target_rows = max_candles * 4
+            if len(df) > target_rows:
+                df = df.tail(target_rows)
+                print(f"   📊 Datos limitados a: {len(df)} filas (para remuestreo 4H)")
+        else:
+            if len(df) > max_candles:
+                df = df.tail(max_candles)
+                print(f"   📊 Datos limitados a: {len(df)} filas")
         
         if not df.empty:
             df = df.reset_index()
@@ -489,10 +594,32 @@ def get_ohlcv_extended(symbol="BTC/USDT", timeframe="1m", days=5):
             # Select only required columns and ensure proper order
             required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df = df[required_cols]
-            
-            # Remove duplicates based on timestamp
+
+            # Si se solicitó 4h, remuestrear desde 60m y alinear a bloques de 4 horas
+            if timeframe == "4h":
+                try:
+                    # Remuestreo 60m -> 4H si aplica
+                    if yahoo_interval == "60m":
+                        tmp = df.copy().set_index('timestamp')
+                        ohlc = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+                        tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                        df = tmp
+                    # Alineación final exacta a 4H por floor + groupby (idempotente si ya está bien)
+                    df['timestamp'] = df['timestamp'].dt.floor('4H')
+                    df = (
+                        df.groupby('timestamp', as_index=False)
+                          .agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                          .dropna()
+                          .sort_values('timestamp')
+                          .reset_index(drop=True)
+                    )
+                except Exception:
+                    # En caso de cualquier problema, continuar con df tal cual
+                    pass
+
+            # Remove duplicates and sort
             df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
-            
+
             print(f"📊 Obtenidos {len(df)} puntos de datos desde {df['timestamp'].min()} hasta {df['timestamp'].max()}")
             return df
         else:
@@ -562,12 +689,20 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
             end_date = None
             period = "1y"  # 1 año por defecto
         
-        df = ticker.history(
+        # Silenciar logs ruidosos de yfinance
+        import logging as _py_logging
+        _yf_logger = _py_logging.getLogger("yfinance")
+        _prev_level = _yf_logger.level
+        _yf_logger.setLevel(_py_logging.ERROR)
+        try:
+            df = ticker.history(
             start=start_date,
             end=end_date,
             period=period,
             interval=yahoo_interval
-        )
+            )
+        finally:
+            _yf_logger.setLevel(_prev_level)
         
         if not df.empty:
             df = df.reset_index()
@@ -618,6 +753,20 @@ def get_ohlcv_full(symbol="BTC/USDT", timeframe="1m", since=None, until=None, ma
             # Select only required columns and ensure proper order
             required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df = df[required_cols]
+
+            # Resample to 4H if requested timeframe is 4h and data came as 60m
+            if timeframe == "4h" and yahoo_interval == "60m":
+                tmp = df.copy()
+                tmp = tmp.set_index('timestamp')
+                ohlc = {
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }
+                tmp = tmp.resample('4H').apply(ohlc).dropna().reset_index()
+                df = tmp
             
             # Remove duplicates based on timestamp
             df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)

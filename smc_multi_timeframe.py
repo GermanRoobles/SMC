@@ -53,14 +53,9 @@ class MultiTimeframeAnalyzer:
     
     def _adjust_days_for_timeframe(self, timeframe: str, base_days: int) -> int:
         """Ajustar días según timeframe para obtener datos apropiados"""
-        adjustments = {
-            "15m": min(base_days, 7),    # Limitar a 7 días para evitar demasiadas velas
-            "1h": min(base_days * 2, 14),  # Máximo 14 días
-            "4h": min(base_days, 30),     # Máximo 30 días
-            "1d": min(base_days, 60),     # Máximo 60 días
-            "1w": max(base_days // 2, 10)  # Menos datos para timeframes mayores
-        }
-        return adjustments.get(timeframe, base_days)
+        # Unificar: usar exactamente el mismo número de días seleccionado por el usuario
+        # para todos los timeframes, sin ajustes internos
+        return base_days
     
     def _is_timeframe_supported(self, timeframe: str) -> bool:
         """Verificar si el timeframe está soportado por Yahoo Finance"""
